@@ -15,7 +15,7 @@ class TrackerConnect(object):
         self.downloaded = 0
         self.left = torrent.length - self.downloaded
 
-        self.send_request(event='started')
+        self.resp = self.send_request(event='started')
 
     def generate_payload(self, event):
         return {'info_hash': self.info_hash,
@@ -41,5 +41,5 @@ class TrackerConnect(object):
             if peers[i:i+6] not in peers_dict:
                 peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
 
-        for k,v in peers_dict.items():
-            print(k, v.ip, v.port)
+        resp['peers'] = peers_dict
+        return resp
