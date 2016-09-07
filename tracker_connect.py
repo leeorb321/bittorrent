@@ -33,10 +33,14 @@ class TrackerConnect(object):
         resp = bdecode(bytes(r.text, 'ISO-8859-1'))
         peers = resp['peers']
         peers_dict = {}
+
         print("Tracker response received ...")
         for i in range(0, len(peers), 6):
             if peers[i:i+6] not in peers_dict:
                 peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
 
         resp['peers'] = peers_dict
+
+        print("List of %d peers received" % len(resp['peers']))
+
         return resp
