@@ -3,7 +3,7 @@ import random
 
 class Connection(object):
     # Class to manage connections with peers
-    CHUNK_SIZE = 4
+    CHUNK_SIZE = 32
     TIMEOUT = 1
 
     MESSAGE_HANDLERS = {
@@ -41,42 +41,42 @@ class Connection(object):
         next_peer = self.get_next_peer(peers)
         print("Response received, sending file request ...")
         msg = self.compose_request_message(index=1, begin=1)
-        # msg = self.compose_interested_message()
         self.send_message(next_peer, msg)
+        self.wait_for_response(next_peer)
 
     def get_next_peer(self, peers):
         for _, peer in peers.items():
             print("Checking peer ...")
-            s = self.initial_connection(peer)
+            s = peer.connection()
             if s:
-                self.wait_for_response(s, peer)
-
-                return peer
+                print("Established socket connection for next peer")
+                if self.initial_connection(peer):
+                    self.wait_for_response(peer)
 
     def initial_connection(self, peer):
-        r, s = self.send_handshake(peer)
+        r = self.send_handshake(peer)
+        s = peer.connection()
         if r is not None and len(r) > 0:
             if self.validate_hash(r) == False:
                 print("Hash invalid")
                 return False
             else:
                 print("Hash valid")
-                return s
+                return True
         return False
 
     def send_handshake(self, peer):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(self.TIMEOUT)
+        s = peer.connection()
         message = self.handshake
         try:
-            s.connect((peer.ip, peer.port))
             sent = s.send(message)
-            return self.wait_for_handshake(s)
+            return self.wait_for_handshake(peer)
         except (ConnectionRefusedError, socket.timeout) as e:
             print("Error connecting: %r" % e)
-            return None, None
+            return None
 
-    def wait_for_handshake(self, s):
+    def wait_for_handshake(self, peer):
+        s = peer.connection()
         r0 = s.recv(1)
         expected_length = int.from_bytes(r0, byteorder = 'big') + 49
         print("Handshake received with length %d" % expected_length)
@@ -84,42 +84,37 @@ class Connection(object):
         received_from_tracker = r0
 
         if bytes_received == 0:
-            return received_from_tracker, None
+            return received_from_tracker
 
         while bytes_received < expected_length:
             print("Reading bytes - received %d out of %d bytes so far" % (bytes_received, expected_length))
             bytes_read = s.recv(expected_length - bytes_received)
 
             if len(bytes_read) == 0:
-                return received_from_tracker, None
+                return received_from_tracker
 
             bytes_received += len(bytes_read)
             received_from_tracker += bytes_read
-        return received_from_tracker, s
+        if s:
+            s.settimeout(None)
+        return received_from_tracker
 
     def validate_hash(self, response):
         print("Validating hash for message")
         prefix = response[0]
         return response[prefix + 1 + 8:-20] == self.info_hash
 
-    def compose_request_message(self, index, begin):
-        req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
-            (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
-            (self.CHUNK_SIZE).to_bytes(4, byteorder='big')
-        return req
-
     def send_message(self, peer, message):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # s.settimeout(2)
-        try:
-            s.connect((peer.ip, peer.port))
-            sent = s.send(message)
-            return self.wait_for_response(s, peer)
-        except (ConnectionRefusedError, socket.timeout) as e:
-            print("Error connecting: %r" % e)
+        s = peer.connection()
+        sent = s.send(message)
+        if sent > 0:
+            return True
+        else:
+            return False
 
-    def wait_for_response(self, s, peer):
+    def wait_for_response(self, peer):
         print("Message sent - waiting for response")
+        s = peer.connection()
 
         msg_len = 1
         while msg_len != 0:
@@ -147,17 +142,21 @@ class Connection(object):
 
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
             handler(peer, received_from_peer)
-            print(peer.pieces)
+
 
         print("Received %d bytes" % bytes_received)
         return received_from_peer
 
 
     def handle_choke(self, peer, message):
-        pass
+        print("Choked")
+        s = peer.connection()
+        s.close()
 
     def handle_unchoke(self, peer, message):
-        pass
+        print("Unchoked")
+        msg = self.compose_request_message()
+        self.send_message(peer, msg)
 
     def handle_interested(self, peer, message):
         pass
@@ -171,16 +170,27 @@ class Connection(object):
         print(piece)
         peer.add_piece(piece)
 
+        if peer.interested == False:
+            interested_msg = self.compose_interested_message()
+            self.send_message(peer, interested_msg)
+            peer.interested = True
+
+        print(peer.pieces)
+        return True
+
     def handle_bitfield(self, peer, message):
         print("Message type is 'bitfield'")
-        # num_pieces = self.tc.pieces
-        # if len(message) // 8 + 1 != num_pieces:
-        #     print("Incorrect length, bitfield.")
-        #     return False
-        # else:
         pieces = bin(int.from_bytes(message, byteorder='big'))[2:]
         available_indices = [i for i in range(len(pieces)) if pieces[i] == '1']
         peer.add_from_bitfield(available_indices)
+
+        if peer.interested == False:
+            interested_msg = self.compose_interested_message()
+            self.send_message(peer, interested_msg)
+            peer.interested = True
+
+        print(peer.pieces)
+        return True
 
     def handle_request(self, peer, message):
         pass
@@ -190,6 +200,7 @@ class Connection(object):
         begin = int.from_bytes(message[4:8], byteorder='big')
         block = message[8:]
         print("Received block of length: %d" % len(block))
+        # TODO - request next block
 
     def handle_cancel(self, peer, message):
         pass
@@ -200,3 +211,9 @@ class Connection(object):
     def compose_interested_message(self):
         interested = (1).to_bytes(4, byteorder='big') + (2).to_bytes(1, byteorder='big')
         return interested
+
+    def compose_request_message(self, index=0, begin=0):
+        req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
+            (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
+            (self.CHUNK_SIZE).to_bytes(4, byteorder='big')
+        return req
