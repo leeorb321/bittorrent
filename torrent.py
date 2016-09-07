@@ -2,9 +2,9 @@ import hashlib
 from bcoding import bencode
 
 class Torrent(object):
-
+    # Class containing information about a torrent given in the torrent file
     def __init__(self, url, info, name, piece_length, pieces, length):
-        self.url = url
+        self.tracker_url = url
         self.name = name
         self.piece_length = piece_length
         self.pieces = pieces

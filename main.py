@@ -7,4 +7,3 @@ torrent = ParseTorrent('test2.torrent').parse()
 tc = TrackerConnect(torrent)
 info_hash = torrent.get_info_hash()
 conn = Connection(tc, info_hash)
-
