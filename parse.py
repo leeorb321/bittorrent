@@ -28,5 +28,6 @@ class ParseTorrent(object):
         length = info['length'] # only exists for single-file torrents
 
         print("Torrent has %d pieces" % (len(pieces)//20))
+        print("Torrent piece length = %d"%int(piece_length))
 
         return Torrent(url, info, name, piece_length, pieces, length)

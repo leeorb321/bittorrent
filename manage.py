@@ -3,7 +3,7 @@ import random
 
 class Connection(object):
     # Class to manage connections with peers
-    CHUNK_SIZE = 32
+    CHUNK_SIZE = 2**14
     TIMEOUT = 1
 
     MESSAGE_HANDLERS = {
@@ -19,12 +19,13 @@ class Connection(object):
                 9: 'handle_port'
             }
 
-    def __init__(self, tracker_response, info_hash):
+    def __init__(self, tracker_response, info_hash, file_manager):
         self.tc = tracker_response
         self.num_peers = len(self.tc.resp['peers'])
         self.interval = self.tc.resp['interval']
         self.info_hash = info_hash
         self.handshake = self.create_handshake()
+        self.file_manager = file_manager
         self.download_file()
 
     def create_handshake(self):
@@ -45,13 +46,18 @@ class Connection(object):
         self.wait_for_response(next_peer)
 
     def get_next_peer(self, peers):
-        for _, peer in peers.items():
+        peer_list = list(peers.values())
+        index = 0
+        num_peers = len(peer_list)
+        while True:
+            peer = peer_list[index%num_peers]
             print("Checking peer ...")
             s = peer.connection()
             if s:
                 print("Established socket connection for next peer")
                 if self.initial_connection(peer):
                     self.wait_for_response(peer)
+            index+=1
 
     def initial_connection(self, peer):
         r = self.send_handshake(peer)
@@ -71,7 +77,7 @@ class Connection(object):
         try:
             sent = s.send(message)
             return self.wait_for_handshake(peer)
-        except (ConnectionRefusedError, socket.timeout) as e:
+        except (ConnectionRefusedError, socket.timeout, BrokenPipeError) as e:
             print("Error connecting: %r" % e)
             return None
 
@@ -121,6 +127,7 @@ class Connection(object):
             print ("Reading bytes ...")
             try:
                 msg_len = int.from_bytes(s.recv(4), byteorder='big')
+                msg_len = max(msg_len, 1)
             except:
                 return None
 
@@ -147,6 +154,10 @@ class Connection(object):
         print("Received %d bytes" % bytes_received)
         return received_from_peer
 
+    def request_next_block(self, peer):
+        next_index, next_begin = self.file_manager.get_next_block()
+        msg = self.compose_request_message(next_index, next_begin)
+        self.send_message(peer, msg)
 
     def handle_choke(self, peer, message):
         print("Choked")
@@ -155,8 +166,7 @@ class Connection(object):
 
     def handle_unchoke(self, peer, message):
         print("Unchoked")
-        msg = self.compose_request_message()
-        self.send_message(peer, msg)
+        self.request_next_block(peer)
 
     def handle_interested(self, peer, message):
         pass
@@ -175,7 +185,7 @@ class Connection(object):
             self.send_message(peer, interested_msg)
             peer.interested = True
 
-        print(peer.pieces)
+        # print(peer.pieces)
         return True
 
     def handle_bitfield(self, peer, message):
@@ -189,7 +199,7 @@ class Connection(object):
             self.send_message(peer, interested_msg)
             peer.interested = True
 
-        print(peer.pieces)
+        # print(peer.pieces)
         return True
 
     def handle_request(self, peer, message):
@@ -200,7 +210,9 @@ class Connection(object):
         begin = int.from_bytes(message[4:8], byteorder='big')
         block = message[8:]
         print("Received block of length: %d" % len(block))
-        # TODO - request next block
+        self.file_manager.update_status(index, begin, block)
+        self.request_next_block(peer)
+
 
     def handle_cancel(self, peer, message):
         pass
