@@ -3,7 +3,6 @@ import random
 
 class Connection(object):
     # Class to manage connections with peers
-    CHUNK_SIZE = 2**14
     TIMEOUT = 1
 
     MESSAGE_HANDLERS = {
@@ -47,6 +46,7 @@ class Connection(object):
 
     def get_next_peer(self, peers):
         peer_list = list(peers.values())
+        random.shuffle(peer_list)
         index = 0
         num_peers = len(peer_list)
         while True:
@@ -57,7 +57,7 @@ class Connection(object):
                 print("Established socket connection for next peer")
                 if self.initial_connection(peer):
                     self.wait_for_response(peer)
-            index+=1
+            index += 1
 
     def initial_connection(self, peer):
         r = self.send_handshake(peer)
@@ -77,7 +77,7 @@ class Connection(object):
         try:
             sent = s.send(message)
             return self.wait_for_handshake(peer)
-        except (ConnectionRefusedError, socket.timeout, BrokenPipeError) as e:
+        except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
             print("Error connecting: %r" % e)
             return None
 
@@ -155,14 +155,17 @@ class Connection(object):
         return received_from_peer
 
     def request_next_block(self, peer):
-        next_index, next_begin = self.file_manager.get_next_block()
-        msg = self.compose_request_message(next_index, next_begin)
-        self.send_message(peer, msg)
+        next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
+        print("Next index, next begin:", next_index, next_begin)
+        if next_index != None:
+            msg = self.compose_request_message(next_index, next_begin, block_length)
+            self.send_message(peer, msg)
+        else:
+            self.close_peer_connection(peer)
 
     def handle_choke(self, peer, message):
         print("Choked")
-        s = peer.connection()
-        s.close()
+        self.close_peer_connection(peer)
 
     def handle_unchoke(self, peer, message):
         print("Unchoked")
@@ -199,7 +202,6 @@ class Connection(object):
             self.send_message(peer, interested_msg)
             peer.interested = True
 
-        # print(peer.pieces)
         return True
 
     def handle_request(self, peer, message):
@@ -213,7 +215,6 @@ class Connection(object):
         self.file_manager.update_status(index, begin, block)
         self.request_next_block(peer)
 
-
     def handle_cancel(self, peer, message):
         pass
 
@@ -224,8 +225,11 @@ class Connection(object):
         interested = (1).to_bytes(4, byteorder='big') + (2).to_bytes(1, byteorder='big')
         return interested
 
-    def compose_request_message(self, index=0, begin=0):
+    def compose_request_message(self, index, begin, length):
         req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
             (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
-            (self.CHUNK_SIZE).to_bytes(4, byteorder='big')
+            (length).to_bytes(4, byteorder='big')
         return req
+
+    def close_peer_connection(self, peer):
+        peer.shutdown()

@@ -26,7 +26,12 @@ class Peer(object):
             self.s.settimeout(Connection.TIMEOUT)
             try:
                 self.s.connect((self.ip, self.port))
-            except (ConnectionRefusedError, socket.timeout, BrokenPipeError) as e:
+            except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
                 print("Error connecting: %r" % e)
                 return False
         return self.s
+
+    def shutdown(self):
+        self.interested = False
+        self.s.close()
+        self.s = None

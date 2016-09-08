@@ -1,22 +1,37 @@
+import math
 import hashlib
 
 class FileManager(object):
     def __init__(self, torrent):
         self.torrent = torrent
-        self.piece_length = torrent.piece_length
         self.piece_hashes = torrent.hashes
         self.num_pieces = len(self.piece_hashes)
         self.block_size = 2**14
-        self.completion_status = {i: [0]*(self.piece_length//self.block_size) for i in range(self.num_pieces)}
+        self.completion_status = {i: [0]*(torrent.piece_length//self.block_size) for i in range(self.num_pieces)}
+        self.last_sizes()
 
-    def get_next_block(self):
-        for piece, blocks in self.completion_status.items():
+
+    def get_next_block(self, peer):
+        needed_pieces = [ piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
+        # print("Needed pieces: %r" % needed_pieces)
+        print("The intersection of needed and have is: %r" % (set(needed_pieces) & set(peer.pieces)))
+
+        if len(needed_pieces) == 0:
+            self.download_complete()
+
+        for piece in (set(needed_pieces) & set(peer.pieces)):
+            blocks = self.completion_status[piece]
             try:
                 index = blocks.index(0)
-                return piece, index*self.block_size
+                if piece != self.num_pieces - 1 or index != self.num_blocks_last_piece - 1:
+                    return piece, index*self.block_size, self.block_size
+                else:
+                    return piece, index*self.block_size, self.final_block_size
             except:
                 pass
-        self.download_complete()
+
+        if len(set(needed_pieces) & set(peer.pieces)) == 0:
+            return None, None, None
 
     def download_complete(self):
         print("download complete")
@@ -37,7 +52,7 @@ class FileManager(object):
         piece_bytes = b''.join(piece_list)
         h = self.get_hash(piece_bytes)
         if h != h0:
-            print("hashes don't match")
+            print("%d: hashes don't match" % piece)
             return False
         print("%d: hashes match!"%piece)
         return True
@@ -53,3 +68,13 @@ class FileManager(object):
             block_bytes = b''.join(blocks)
             f.write(block_bytes)
         f.close()
+
+    def last_sizes(self):
+        self.last_piece_size = self.torrent.length % self.torrent.piece_length
+        self.num_blocks_last_piece = math.ceil(self.last_piece_size / self.block_size)
+        self.final_block_size = self.last_piece_size % self.block_size
+        self.completion_status[self.num_pieces-1] = [0]*self.num_blocks_last_piece
+        print("Final block size is", self.final_block_size)
+        print("Final piece size is", self.last_piece_size)
+        print("num_blocks_last_piece", self.num_blocks_last_piece)
+        print("Block size:",  self.block_size)
