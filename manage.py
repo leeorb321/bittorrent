@@ -226,6 +226,7 @@ class Connection(object):
         return interested
 
     def compose_request_message(self, index, begin, length):
+        print("Requesting block of length", length)
         req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
             (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
             (length).to_bytes(4, byteorder='big')

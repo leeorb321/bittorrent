@@ -1,4 +1,5 @@
 import math
+import random
 import hashlib
 
 class FileManager(object):
@@ -6,14 +7,25 @@ class FileManager(object):
         self.torrent = torrent
         self.piece_hashes = torrent.hashes
         self.num_pieces = len(self.piece_hashes)
-        self.block_size = 2**14
-        self.completion_status = {i: [0]*(torrent.piece_length//self.block_size) for i in range(self.num_pieces)}
+        self.block_size = 2**13
+        self.completion_status = {i: [0]*math.ceil(torrent.piece_length/self.block_size) for i in range(self.num_pieces)}
         self.last_sizes()
 
+    def get_block_size(self, piece, block):
+        blocks_per_piece = len(self.completion_status[piece])
+        if block != blocks_per_piece - 1:
+            print("Normal block size, requesting:", self.block_size)
+            return self.block_size
+        elif piece != self.num_pieces - 1:
+            odd_block_size = self.torrent.piece_length % self.block_size
+            print("Last block, not last piece, requesting:", odd_block_size if odd_block_size != 0 else self.block_size)
+            return odd_block_size if odd_block_size != 0 else self.block_size
+        else:
+            print("Last piece and last block, requesting:", self.final_block_size)
+            return self.final_block_size
 
     def get_next_block(self, peer):
         needed_pieces = [ piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
-        # print("Needed pieces: %r" % needed_pieces)
         print("The intersection of needed and have is: %r" % (set(needed_pieces) & set(peer.pieces)))
 
         if len(needed_pieces) == 0:
@@ -23,10 +35,8 @@ class FileManager(object):
             blocks = self.completion_status[piece]
             try:
                 index = blocks.index(0)
-                if piece != self.num_pieces - 1 or index != self.num_blocks_last_piece - 1:
-                    return piece, index*self.block_size, self.block_size
-                else:
-                    return piece, index*self.block_size, self.final_block_size
+                block_size = self.get_block_size(piece, index)
+                return piece, index*self.block_size, block_size
             except:
                 pass
 
@@ -44,7 +54,8 @@ class FileManager(object):
         self.completion_status[piece][block_index] = data
         if all(self.completion_status[piece]):
             print("Piece complete, checking hash")
-            self.validate_piece(piece)
+            if not self.validate_piece(piece):
+                self.completion_status[piece] == [0] * len(self.validate_piece(piece))
 
     def validate_piece(self, piece):
         h0 = self.piece_hashes[piece]
