@@ -58,12 +58,14 @@ class TrackerConnect(object):
 
     def _send_udp_request(self, event):
         s_tracker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ip, port = self.parse_udp_url(self.torrent.tracker_url)
+        addr, port = self.parse_udp_url(self.torrent.tracker_url)
 
         msg, txn_id = self.udp_connection_request()
-        s_tracker.sendto(msg, (ip, int(port)))
-        response = s_tracker.recvfrom(2048)[0]
+
+        s_tracker.sendto(msg, (addr, int(port)))
+        response, _ = s_tracker.recvfrom(2048)
         print("UDP tracker response received ...")
+        print("Length of response:", len(response))
 
         if len(response) >= 16:
             action_resp = int.from_bytes(response[:4], byteorder='big')
@@ -74,7 +76,7 @@ class TrackerConnect(object):
         else:
             return False
 
-        # announce
+        # Send announce message
         client_port = s_tracker.getsockname()[1]
 
         events = {
@@ -84,12 +86,17 @@ class TrackerConnect(object):
             'stopped': 3
         }
 
-        msg, txn_id = self.compose_udp_announce(response[8:], client_port, events[event])
-        s_tracker.sendto(msg, (ip, int(port)))
+        self.send_udp_announce(response[8:], client_port, events[event], addr, port, s_tracker)
+
+    def send_udp_announce(self, conn_id, client_port, event, addr, port, s_tracker):
+        msg, txn_id = self.compose_udp_announce(conn_id, client_port, event)
+
+        s_tracker.sendto(msg, (addr, int(port)))
 
         print("Announce request sent ...")
-        response = s_tracker.recvfrom(2048)[0]
-        print("RESPONSE AND LENGTH:", response, len(response))
+        response, tracker_addr = s_tracker.recvfrom(4096)
+        print("Length of response:", len(response))
+        print(response, tracker_addr)
 
         if len(response) >= 20:
             resp = {}
@@ -105,6 +112,7 @@ class TrackerConnect(object):
                 print("Response action type is not 'announce.'")
                 return False
             if resp['txn_id'] != txn_id:
+                print("Transaction IDs do not match.")
                 return False
             print("leechers:", resp['leechers'])
             print("seeders:", resp['seeders'])
@@ -122,14 +130,17 @@ class TrackerConnect(object):
                 i += 6
 
             resp['peers'] = peers_dict
+
+            print("List of %d peers received" % len(resp['peers']))
+
             return resp
 
         else:
             return False
 
     def parse_udp_url(self, url):
-        port_ip = re.match(r'^(udp://.+):(\d+)', url).groups()
-        print(port_ip)
+        port_ip = re.match(r'^udp://(.+):(\d+)', url).groups()
+        print(port_ip[0], port_ip[1])
         return port_ip[0], port_ip[1]
 
     def udp_connection_request(self):
@@ -142,7 +153,7 @@ class TrackerConnect(object):
         return msg, txn_id
 
     def compose_udp_announce(self, conn_id, port, event):
-        action = 0x1
+        action = 1
         txn_id = int(random.randrange(0, 255))
         ip = 0
         key = int(random.randrange(0, 255))

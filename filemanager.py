@@ -14,14 +14,11 @@ class FileManager(object):
     def get_block_size(self, piece, block):
         blocks_per_piece = len(self.completion_status[piece])
         if block != blocks_per_piece - 1:
-            print("Normal block size, requesting:", self.block_size)
             return self.block_size
         elif piece != self.num_pieces - 1:
             odd_block_size = self.torrent.piece_length % self.block_size
-            print("Last block, not last piece, requesting:", odd_block_size if odd_block_size != 0 else self.block_size)
             return odd_block_size if odd_block_size != 0 else self.block_size
         else:
-            print("Last piece and last block, requesting:", self.final_block_size)
             return self.final_block_size
 
     def get_next_block(self, peer):
@@ -85,7 +82,3 @@ class FileManager(object):
         self.num_blocks_last_piece = math.ceil(self.last_piece_size / self.block_size)
         self.final_block_size = self.last_piece_size % self.block_size
         self.completion_status[self.num_pieces-1] = [0]*self.num_blocks_last_piece
-        print("Final block size is", self.final_block_size)
-        print("Final piece size is", self.last_piece_size)
-        print("num_blocks_last_piece", self.num_blocks_last_piece)
-        print("Block size:",  self.block_size)

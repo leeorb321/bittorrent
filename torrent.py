@@ -21,7 +21,6 @@ class Torrent(object):
         sha1 = hashlib.sha1()
         sha1.update(info_bytes)
         x = sha1.digest()
-        print(x, type(x), "sdlkfhskshfklhsfkjhsdaJJAJSDJASDJ")
         return x
 
     def get_info_hash(self):
