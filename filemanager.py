@@ -55,7 +55,7 @@ class FileManager(object):
         if all(self.completion_status[piece]):
             print("Piece complete, checking hash")
             if not self.validate_piece(piece):
-                self.completion_status[piece] == [0] * len(self.validate_piece(piece))
+                self.completion_status[piece] == [0] * len(piece)
 
     def validate_piece(self, piece):
         h0 = self.piece_hashes[piece]

@@ -20,7 +20,9 @@ class Torrent(object):
         info_bytes = bencode(info)
         sha1 = hashlib.sha1()
         sha1.update(info_bytes)
-        return sha1.digest()
+        x = sha1.digest()
+        print(x, type(x), "sdlkfhskshfklhsfkjhsdaJJAJSDJASDJ")
+        return x
 
     def get_info_hash(self):
         return self.info_hash
