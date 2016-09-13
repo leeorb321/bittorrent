@@ -1,5 +1,9 @@
 import socket
 import random
+from queue import Queue
+
+from filemanager import FileManager
+from filewriter import FileWriter
 
 class Connection(object):
     # Class to manage connections with peers
@@ -18,13 +22,17 @@ class Connection(object):
                 9: 'handle_port'
             }
 
-    def __init__(self, tracker_response, info_hash, file_manager):
+    def __init__(self, tracker_response, torrent):
         self.tc = tracker_response
+        self.info_hash = torrent.get_info_hash()
         self.num_peers = len(self.tc.resp['peers'])
         self.interval = self.tc.resp['interval']
-        self.info_hash = info_hash
         self.handshake = self.create_handshake()
-        self.file_manager = file_manager
+
+        self.to_write = Queue()
+        self.file_manager = FileManager(torrent, self.to_write)
+        self.file_writer = FileWriter(torrent, self.to_write)
+
         self.download_file()
 
     def create_handshake(self):
@@ -39,17 +47,13 @@ class Connection(object):
     def download_file(self):
         peers = self.tc.resp['peers']
         next_peer = self.get_next_peer(peers)
-        print("Response received, sending file request ...")
-        msg = self.compose_request_message(index=1, begin=1)
-        self.send_message(next_peer, msg)
-        self.wait_for_response(next_peer)
 
     def get_next_peer(self, peers):
         peer_list = list(peers.values())
         random.shuffle(peer_list)
         index = 0
         num_peers = len(peer_list)
-        while True:
+        while self.file_manager.complete == False:
             peer = peer_list[index%num_peers]
             print("Checking peer ...")
             s = peer.connection()
@@ -123,7 +127,7 @@ class Connection(object):
         s = peer.connection()
 
         msg_len = 1
-        while msg_len != 0:
+        while msg_len != 0 and self.file_manager.complete == False:
             print ("Reading bytes ...")
             try:
                 msg_len = int.from_bytes(s.recv(4), byteorder='big')
@@ -150,8 +154,6 @@ class Connection(object):
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
             handler(peer, received_from_peer)
 
-
-        print("Received %d bytes" % bytes_received)
         return received_from_peer
 
     def request_next_block(self, peer):

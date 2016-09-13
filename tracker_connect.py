@@ -39,22 +39,27 @@ class TrackerConnect(object):
 
     def _send_http_request(self, event):
         payload = self.generate_payload(event)
-        r = requests.get(self.torrent.tracker_url, params=payload)
-        resp = bdecode(bytes(r.text, 'ISO-8859-1'))
-        peers = resp['peers']
-        peers_dict = {}
+        try:
+            r = requests.get(self.torrent.tracker_url, params=payload)
+            resp = bdecode(bytes(r.text, 'ISO-8859-1'))
+            peers = resp['peers']
+            peers_dict = {}
 
-        print("HTTP tracker response received ...")
-        for i in range(0, len(peers), 6):
-            if peers[i:i+6] not in peers_dict:
-                peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
+            print("HTTP tracker response received ...")
+            for i in range(0, len(peers), 6):
+                if peers[i:i+6] not in peers_dict:
+                    peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
 
-        resp['peers'] = peers_dict
+            resp['peers'] = peers_dict
 
-        print("List of %d peers received" % len(resp['peers']))
-        print(resp['peers'])
+            print("List of %d peers received" % len(resp['peers']))
+            print(resp['peers'])
 
-        return resp
+            return resp
+
+        except (ConnectionResetError, ConnectionError) as e:
+            return False
+
 
     def _send_udp_request(self, event):
         s_tracker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

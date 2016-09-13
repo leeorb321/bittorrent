@@ -2,14 +2,18 @@ import math
 import random
 import hashlib
 
+from filewriter import FileWriter
+
 class FileManager(object):
-    def __init__(self, torrent):
+    def __init__(self, torrent, to_write):
         self.torrent = torrent
         self.piece_hashes = torrent.hashes
         self.num_pieces = len(self.piece_hashes)
         self.block_size = 2**13
         self.completion_status = {i: [0]*math.ceil(torrent.piece_length/self.block_size) for i in range(self.num_pieces)}
         self.last_sizes()
+        self.complete = False
+        self.to_write = to_write
 
     def get_block_size(self, piece, block):
         blocks_per_piece = len(self.completion_status[piece])
@@ -41,10 +45,12 @@ class FileManager(object):
             return None, None, None
 
     def download_complete(self):
-        print("download complete")
+        self.to_write.put((-1, 0))
+        print("Download complete")
         for piece, chunks in self.completion_status.items():
             self.validate_piece(piece)
-        self.write_to_file()
+        print("Download of %r complete." % self.torrent.name)
+        self.complete = True
 
     def update_status(self, piece, begin, data):
         block_index = begin // self.block_size
@@ -52,7 +58,14 @@ class FileManager(object):
         if all(self.completion_status[piece]):
             print("Piece complete, checking hash")
             if not self.validate_piece(piece):
-                self.completion_status[piece] == [0] * len(piece)
+                self.completion_status[piece] == [0] * len(self.completion_status[piece])
+            else:
+                self.add_completed_piece(piece)
+
+    def add_completed_piece(self, piece):
+        data = b''.join(self.completion_status[piece])
+        self.to_write.put((piece, data))
+        self.completion_status[piece] == [1] * len(self.completion_status[piece])
 
     def validate_piece(self, piece):
         h0 = self.piece_hashes[piece]
@@ -69,13 +82,6 @@ class FileManager(object):
         sha1 = hashlib.sha1()
         sha1.update(piece)
         return sha1.digest()
-
-    def write_to_file(self):
-        f = open('test.epub', 'wb')
-        for piece, blocks in self.completion_status.items():
-            block_bytes = b''.join(blocks)
-            f.write(block_bytes)
-        f.close()
 
     def last_sizes(self):
         self.last_piece_size = self.torrent.length % self.torrent.piece_length
