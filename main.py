@@ -4,6 +4,6 @@ from tracker_connect import TrackerConnect
 from manage import Connection
 from filemanager import FileManager
 
-torrent = ParseTorrent('tom.torrent').parse()
+torrent = ParseTorrent('test3.torrent').parse()
 tc = TrackerConnect(torrent)
 conn = Connection(tc, torrent)

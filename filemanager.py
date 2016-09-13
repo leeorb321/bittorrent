@@ -84,3 +84,9 @@ class FileManager(object):
         self.num_blocks_last_piece = math.ceil(self.last_piece_size / self.block_size)
         self.final_block_size = self.last_piece_size % self.block_size
         self.completion_status[self.num_pieces-1] = [0]*self.num_blocks_last_piece
+
+    def download_status(self):
+        total = sum([len(self.completion_status[x]) for x in self.completion_status])
+        complete = sum([len(self.completion_status[block]) for block in self.completion_status if 0 not in self.completion_status[block]])
+        percent = str((complete / total) * 100) + '%'
+        return percent

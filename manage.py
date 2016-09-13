@@ -52,20 +52,23 @@ class Connection(object):
         peer_id = self.tc.peer_id
         return pstrlen + pstr + reserved + info_hash + peer_id
 
+    def get_peers(self):
+        index = 0
+        while len(self.current_connections) < self.MAX_CONNECTIONS and not self.file_manager.complete and self.available_peers != []:
+            peer = self.available_peers[index%len(self.available_peers)]
+            self.available_peers.remove(peer)
+            print("Checking peer:", peer)
+            if peer not in self.current_connections:
+                self.start(peer)
+            index += 1
+
     def download_file(self):
         peers = self.tc.resp['peers']
         self.available_peers = list(peers.values())
         random.shuffle(self.available_peers)
-        index = 0
 
-        while len(self.current_connections) < self.MAX_CONNECTIONS and not self.file_manager.complete and self.available_peers != []:
-            peer = self.available_peers[index%len(self.available_peers)]
-            self.available_peers.remove(peer)
-            print("Checking peer:", peer.ip)
-            if peer not in self.current_connections:
-                self.start(peer)
-            index += 1
-            self.start_maintain_peerlist()
+        self.get_peers()
+        self.start_maintain_peerlist()
 
     def start_maintain_peerlist(self):
         t = Thread(target=self.maintain_peers)
@@ -73,10 +76,16 @@ class Connection(object):
 
     def maintain_peers(self):
         while True:
-            if self.available_peers == [] or not self.file_manager.complete:
+            print("There are %r current connections and %r available peers." % (len(self.current_connections), len(self.available_peers)))
+            print("Download is %r complete." % self.file_manager.download_status())
+            for i, peer in enumerate(self.current_connections):
+                print("Connection #%d: %r" % (i, peer))
+            if self.available_peers == [] and not self.file_manager.complete:
                 peers = self.tc.resp['peers']
                 self.available_peers = list(peers.values())
                 random.shuffle(self.available_peers)
+
+            self.get_peers()
             if self.file_manager.complete:
                 return
             time.sleep(1)
@@ -98,6 +107,8 @@ class Connection(object):
             print("Established socket connection for next peer")
             if self.initial_connection(peer):
                 self.wait_for_response(peer)
+        else:
+            self.close_peer_connection(peer)
         return
 
     def initial_connection(self, peer):
@@ -106,11 +117,14 @@ class Connection(object):
         if r is not None and len(r) > 0:
             if self.validate_hash(r) == False:
                 print("Hash invalid")
+                self.close_peer_connection(peer)
                 return False
             else:
                 print("Hash valid")
                 return True
-        return False
+        else:
+            self.close_peer_connection(peer)
+            return False
 
     def send_handshake(self, peer):
         s = peer.connection()
@@ -120,6 +134,7 @@ class Connection(object):
             return self.wait_for_handshake(peer)
         except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
             print("Error connecting: %r" % e)
+            self.close_peer_connection(peer)
             return None
 
     def wait_for_handshake(self, peer):
@@ -154,10 +169,11 @@ class Connection(object):
     def send_message(self, peer, message):
         s = peer.connection()
         sent = s.send(message)
-        if sent > 0:
-            return True
-        else:
+        if sent < 0:
+            self.close_peer_connection(peer)
             return False
+        else:
+            return True
 
     def wait_for_response(self, peer):
         print("Message sent - waiting for response")
@@ -170,6 +186,7 @@ class Connection(object):
                 msg_len = int.from_bytes(s.recv(4), byteorder='big')
                 msg_len = max(msg_len, 1)
             except:
+                self.close_peer_connection(peer)
                 return None
 
             msg_id = s.recv(1)
@@ -189,9 +206,11 @@ class Connection(object):
             print("Just read %d bytes" % len(bytes_read))
 
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
+            print("Received message with id:", int.from_bytes(msg_id, byteorder='big'))
             handler(peer, received_from_peer)
 
         if msg_len == 1:
+            self.close_peer_connection(peer)
             return False
         else:
             return received_from_peer
@@ -231,10 +250,10 @@ class Connection(object):
 
         if peer.interested == False:
             interested_msg = self.compose_interested_message()
-            self.send_message(peer, interested_msg)
-            peer.interested = True
+            peer_resp = self.send_message(peer, interested_msg)
+            if peer_resp:
+                peer.interested = True
 
-        # print(peer.pieces)
         return True
 
     def handle_bitfield(self, peer, message):
@@ -245,8 +264,9 @@ class Connection(object):
 
         if peer.interested == False:
             interested_msg = self.compose_interested_message()
-            self.send_message(peer, interested_msg)
-            peer.interested = True
+            peer_resp = self.send_message(peer, interested_msg)
+            if peer_resp:
+                peer.interested = True
 
         return True
 
@@ -285,4 +305,5 @@ class Connection(object):
         finally:
             self.peerlist_lock.release()
         del self.threads[peer]
+        self.available_peers.append(peer)
         peer.shutdown()

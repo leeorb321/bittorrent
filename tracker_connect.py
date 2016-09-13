@@ -76,7 +76,7 @@ class TrackerConnect(object):
             action_resp = int.from_bytes(response[:4], byteorder='big')
             txn_id_resp = int.from_bytes(response[4:8], byteorder='big')
             conn_id_resp = int.from_bytes(response[8:], byteorder='big')
-            if txn_id_resp != txn_id:
+            if txn_id_resp != txn_id or action_resp != 0:
                 return False
         else:
             return False
@@ -91,7 +91,7 @@ class TrackerConnect(object):
             'stopped': 3
         }
 
-        self.send_udp_announce(response[8:], client_port, events[event], addr, port, s_tracker)
+        return self.send_udp_announce(response[8:], client_port, events[event], addr, port, s_tracker)
 
     def send_udp_announce(self, conn_id, client_port, event, addr, port, s_tracker):
         msg, txn_id = self.compose_udp_announce(conn_id, client_port, event)
@@ -101,7 +101,6 @@ class TrackerConnect(object):
         print("Announce request sent ...")
         response, tracker_addr = s_tracker.recvfrom(4096)
         print("Length of response:", len(response))
-        print(response, tracker_addr)
 
         if len(response) >= 20:
             resp = {}
@@ -111,7 +110,6 @@ class TrackerConnect(object):
             resp['interval'] = int.from_bytes(response[8:12], byteorder='big')
             resp['leechers'] = int.from_bytes(response[12:16], byteorder='big')
             resp['seeders'] = int.from_bytes(response[16:20], byteorder='big')
-            print("Total response length:", response[20:])
 
             if resp['action'] != 1:
                 print("Response action type is not 'announce.'")
@@ -124,15 +122,17 @@ class TrackerConnect(object):
 
             peers_dict = {}
             i = 20
-            while i < len(response):
-                print("I IS:", i)
-                print("AND", peers[i:i+6])
+            peers = response[20:]
+            # while i < len(response):
+            #     if response[i:i+6] not in peers_dict:
+            #         peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
+
+            #     i += 6
+
+
+            for i in range(20, len(response), 6):
                 if response[i:i+6] not in peers_dict:
                     peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
-                    temp = peers_dict[peers[i:i+6]]
-                    print(temp)
-
-                i += 6
 
             resp['peers'] = peers_dict
 
@@ -151,7 +151,7 @@ class TrackerConnect(object):
     def udp_connection_request(self):
         conn_id = 0x41727101980 # default, required initial value to identify the protocol
         action = 0x0 # 0 for connection request
-        txn_id = int(random.randrange(0, 255))
+        txn_id = int(random.randrange(0, 2**32 - 1))
         msg = conn_id.to_bytes(8, byteorder='big') + action.to_bytes(4, byteorder='big') + \
                 txn_id.to_bytes(4, byteorder='big')
 
@@ -159,15 +159,16 @@ class TrackerConnect(object):
 
     def compose_udp_announce(self, conn_id, port, event):
         action = 1
-        txn_id = int(random.randrange(0, 255))
+        txn_id = int(random.randrange(0, 2**31 - 1))
         ip = 0
-        key = int(random.randrange(0, 255))
-        num_want = b'\xff\xff\xff\xff' # -1 is default number of peers desired
+        key = int(random.randrange(0, 2**31 - 1))
+        # num_want = b'\xff\xff\xff\xff' # -1 is default number of peers desired
+        num_want = 2**17
 
         msg = conn_id + action.to_bytes(4, byteorder='big') + txn_id.to_bytes(4, byteorder='big') + \
-                self.info_hash + self.peer_id + self.downloaded.to_bytes(20, byteorder='big') + \
+                self.info_hash + self.peer_id + self.downloaded.to_bytes(8, byteorder='big') + \
                 self.left.to_bytes(8, byteorder='big') + self.uploaded.to_bytes(8, byteorder='big') + \
-                event.to_bytes(8, byteorder='big') + ip.to_bytes(4, byteorder='big') + \
-                key.to_bytes(4, byteorder='big') + num_want + port.to_bytes(4, byteorder='big')
+                event.to_bytes(4, byteorder='big') + ip.to_bytes(4, byteorder='big') + \
+                key.to_bytes(4, byteorder='big') + num_want.to_bytes(4, byteorder='big') + port.to_bytes(2, byteorder='big')
 
         return msg, txn_id

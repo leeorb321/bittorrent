@@ -9,6 +9,9 @@ class Peer(object):
         self.interested = False
         self.s = None
 
+    def __repr__(self):
+        return "IP: %r, Port: %r" % (self.ip, self.port)
+
     def parse_bin(self, bin_str):
         self.ip = '.'.join([str(x) for x in bin_str[:4]])
         self.port = int.from_bytes(bin_str[4:], byteorder='big')
