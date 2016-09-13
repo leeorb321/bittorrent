@@ -24,7 +24,7 @@ class Connection(object):
                 9: 'handle_port'
             }
 
-    MAX_CONNECTIONS = 10
+    MAX_CONNECTIONS = 25
 
     def __init__(self, tracker_response, torrent):
         self.tc = tracker_response
@@ -57,7 +57,7 @@ class Connection(object):
         while len(self.current_connections) < self.MAX_CONNECTIONS and not self.file_manager.complete and self.available_peers != []:
             peer = self.available_peers[index%len(self.available_peers)]
             self.available_peers.remove(peer)
-            print("Checking peer:", peer)
+            # print("Checking peer:", peer)
             if peer not in self.current_connections:
                 self.start(peer)
             index += 1
@@ -91,7 +91,7 @@ class Connection(object):
             time.sleep(1)
 
     def start(self, peer):
-        print("Starting peer ...")
+        # print("Starting peer ...")
         self.peerlist_lock.acquire()
         try:
             self.current_connections.append(peer)
@@ -133,7 +133,7 @@ class Connection(object):
             sent = s.send(message)
             return self.wait_for_handshake(peer)
         except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
-            print("Error connecting: %r" % e)
+            # print("Error connecting: %r" % e)
             self.close_peer_connection(peer)
             return None
 

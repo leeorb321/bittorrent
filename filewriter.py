@@ -20,6 +20,7 @@ class FileWriter(object):
             while not self.to_write.empty():
                 index, data = self.to_write.get()
                 if index == -1:
+                    print("returned")
                     return
                 self.write_piece(index, data)
             time.sleep(0.05)

@@ -30,7 +30,7 @@ class Peer(object):
             try:
                 self.s.connect((self.ip, self.port))
             except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
-                print("Error connecting: %r" % e)
+                # print("Error connecting: %r" % e)
                 return False
         return self.s
 

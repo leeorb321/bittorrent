@@ -121,18 +121,9 @@ class TrackerConnect(object):
             print("seeders:", resp['seeders'])
 
             peers_dict = {}
-            i = 20
-            peers = response[20:]
-            # while i < len(response):
-            #     if response[i:i+6] not in peers_dict:
-            #         peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
-
-            #     i += 6
-
-
-            for i in range(20, len(response), 6):
+            for i in range(20, len(response)-6, 6):
                 if response[i:i+6] not in peers_dict:
-                    peers_dict[peers[i:i+6]] = Peer(peers[i:i+6])
+                    peers_dict[response[i:i+6]] = Peer(response[i:i+6])
 
             resp['peers'] = peers_dict
 
@@ -162,7 +153,6 @@ class TrackerConnect(object):
         txn_id = int(random.randrange(0, 2**31 - 1))
         ip = 0
         key = int(random.randrange(0, 2**31 - 1))
-        # num_want = b'\xff\xff\xff\xff' # -1 is default number of peers desired
         num_want = 2**17
 
         msg = conn_id + action.to_bytes(4, byteorder='big') + txn_id.to_bytes(4, byteorder='big') + \

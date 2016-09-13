@@ -25,7 +25,8 @@ class FileManager(object):
 
     def get_next_block(self, peer):
         needed_pieces = [ piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
-        print("The intersection of needed and have is: %r" % (set(needed_pieces) & set(peer.pieces)))
+        print("The intersection of needed and have is %r pieces long" % len(set(needed_pieces) & set(peer.pieces)))
+        print(len(set(needed_pieces) & set(peer.pieces)) * "*")
 
         if len(needed_pieces) == 0:
             self.download_complete()
