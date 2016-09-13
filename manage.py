@@ -1,6 +1,8 @@
 import socket
 import random
+import time
 from queue import Queue
+from threading import Thread, Lock
 
 from filemanager import FileManager
 from filewriter import FileWriter
@@ -22,14 +24,20 @@ class Connection(object):
                 9: 'handle_port'
             }
 
+    MAX_CONNECTIONS = 10
+
     def __init__(self, tracker_response, torrent):
         self.tc = tracker_response
         self.info_hash = torrent.get_info_hash()
         self.num_peers = len(self.tc.resp['peers'])
         self.interval = self.tc.resp['interval']
         self.handshake = self.create_handshake()
+        self.current_connections = []
 
         self.to_write = Queue()
+        self.threads = {}
+        self.peerlist_lock = Lock()
+        self.file_lock = Lock()
         self.file_manager = FileManager(torrent, self.to_write)
         self.file_writer = FileWriter(torrent, self.to_write)
 
@@ -46,22 +54,51 @@ class Connection(object):
 
     def download_file(self):
         peers = self.tc.resp['peers']
-        next_peer = self.get_next_peer(peers)
-
-    def get_next_peer(self, peers):
-        peer_list = list(peers.values())
-        random.shuffle(peer_list)
+        self.available_peers = list(peers.values())
+        random.shuffle(self.available_peers)
         index = 0
-        num_peers = len(peer_list)
-        while self.file_manager.complete == False:
-            peer = peer_list[index%num_peers]
-            print("Checking peer ...")
-            s = peer.connection()
-            if s:
-                print("Established socket connection for next peer")
-                if self.initial_connection(peer):
-                    self.wait_for_response(peer)
+
+        while len(self.current_connections) < self.MAX_CONNECTIONS and not self.file_manager.complete and self.available_peers != []:
+            peer = self.available_peers[index%len(self.available_peers)]
+            self.available_peers.remove(peer)
+            print("Checking peer:", peer.ip)
+            if peer not in self.current_connections:
+                self.start(peer)
             index += 1
+            self.start_maintain_peerlist()
+
+    def start_maintain_peerlist(self):
+        t = Thread(target=self.maintain_peers)
+        t.start()
+
+    def maintain_peers(self):
+        while True:
+            if self.available_peers == [] or not self.file_manager.complete:
+                peers = self.tc.resp['peers']
+                self.available_peers = list(peers.values())
+                random.shuffle(self.available_peers)
+            if self.file_manager.complete:
+                return
+            time.sleep(1)
+
+    def start(self, peer):
+        print("Starting peer ...")
+        self.peerlist_lock.acquire()
+        try:
+            self.current_connections.append(peer)
+        finally:
+            self.peerlist_lock.release()
+
+        self.threads[peer] = Thread(target=self.connect_to_peer, args=(peer,))
+        self.threads[peer].start()
+
+    def connect_to_peer(self, peer):
+        s = peer.connection()
+        if s:
+            print("Established socket connection for next peer")
+            if self.initial_connection(peer):
+                self.wait_for_response(peer)
+        return
 
     def initial_connection(self, peer):
         r = self.send_handshake(peer)
@@ -154,10 +191,17 @@ class Connection(object):
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
             handler(peer, received_from_peer)
 
-        return received_from_peer
+        if msg_len == 1:
+            return False
+        else:
+            return received_from_peer
 
     def request_next_block(self, peer):
-        next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
+        self.file_lock.acquire()
+        try:
+            next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
+        finally:
+            self.file_lock.release()
         print("Next index, next begin:", next_index, next_begin)
         if next_index != None:
             msg = self.compose_request_message(next_index, next_begin, block_length)
@@ -235,4 +279,10 @@ class Connection(object):
         return req
 
     def close_peer_connection(self, peer):
+        self.peerlist_lock.acquire()
+        try:
+            self.current_connections.remove(peer)
+        finally:
+            self.peerlist_lock.release()
+        del self.threads[peer]
         peer.shutdown()

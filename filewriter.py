@@ -1,3 +1,4 @@
+import time
 from threading import Thread
 
 class FileWriter(object):
@@ -16,11 +17,12 @@ class FileWriter(object):
 
     def writing(self):
         while True:
-            if not self.to_write.empty():
+            while not self.to_write.empty():
                 index, data = self.to_write.get()
                 if index == -1:
                     return
                 self.write_piece(index, data)
+            time.sleep(0.05)
 
     def write_piece(self, index, data):
         print("Current piece:",index)

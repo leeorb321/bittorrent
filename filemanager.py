@@ -2,8 +2,6 @@ import math
 import random
 import hashlib
 
-from filewriter import FileWriter
-
 class FileManager(object):
     def __init__(self, torrent, to_write):
         self.torrent = torrent
@@ -46,9 +44,6 @@ class FileManager(object):
 
     def download_complete(self):
         self.to_write.put((-1, 0))
-        print("Download complete")
-        for piece, chunks in self.completion_status.items():
-            self.validate_piece(piece)
         print("Download of %r complete." % self.torrent.name)
         self.complete = True
 
@@ -57,15 +52,16 @@ class FileManager(object):
         self.completion_status[piece][block_index] = data
         if all(self.completion_status[piece]):
             print("Piece complete, checking hash")
-            if not self.validate_piece(piece):
-                self.completion_status[piece] == [0] * len(self.completion_status[piece])
+            if self.validate_piece(piece) == False:
+                self.completion_status[piece] = [0] * len(self.completion_status[piece])
             else:
                 self.add_completed_piece(piece)
 
     def add_completed_piece(self, piece):
         data = b''.join(self.completion_status[piece])
         self.to_write.put((piece, data))
-        self.completion_status[piece] == [1] * len(self.completion_status[piece])
+        self.completion_status[piece] = [1] * len(self.completion_status[piece])
+        print(self.completion_status[piece])
 
     def validate_piece(self, piece):
         h0 = self.piece_hashes[piece]
