@@ -3,6 +3,7 @@ import random
 import time
 from queue import Queue
 from threading import Thread, Lock
+import os
 
 from filemanager import FileManager
 from filewriter import FileWriter
@@ -32,7 +33,7 @@ class Connection(object):
         self.num_peers = len(self.tc.resp['peers'])
         self.interval = self.tc.resp['interval']
         self.handshake = self.create_handshake()
-        self.current_connections = []
+        self.current_connections = set()
 
         self.to_write = Queue()
         self.threads = {}
@@ -44,7 +45,7 @@ class Connection(object):
         self.download_file()
 
     def create_handshake(self):
-        print("Creating handshake message ...")
+        #print("Creating handshake message ...")
         pstrlen = bytes([19])
         pstr = b'BitTorrent protocol'
         reserved = b'\0' * 8
@@ -76,10 +77,15 @@ class Connection(object):
 
     def maintain_peers(self):
         while True:
+            os.system('cls' if os.name=='nt' else 'clear')
             print("There are %r current connections and %r available peers." % (len(self.current_connections), len(self.available_peers)))
             print("Download is %r complete." % self.file_manager.download_status())
-            for i, peer in enumerate(self.current_connections):
-                print("Connection #%d: %r" % (i, peer))
+            print("Pieces remaining:")
+            needed, total = self.file_manager.get_piece_numbers()
+            print("*"*needed)
+
+            self.file_manager.enqueue_outstanding_requests()
+
             if self.available_peers == [] and not self.file_manager.complete:
                 peers = self.tc.resp['peers']
                 self.available_peers = list(peers.values())
@@ -94,7 +100,7 @@ class Connection(object):
         # print("Starting peer ...")
         self.peerlist_lock.acquire()
         try:
-            self.current_connections.append(peer)
+            self.current_connections.add(peer)
         finally:
             self.peerlist_lock.release()
 
@@ -104,7 +110,7 @@ class Connection(object):
     def connect_to_peer(self, peer):
         s = peer.connection()
         if s:
-            print("Established socket connection for next peer")
+            #print("Established socket connection for next peer")
             if self.initial_connection(peer):
                 self.wait_for_response(peer)
         else:
@@ -116,11 +122,11 @@ class Connection(object):
         s = peer.connection()
         if r is not None and len(r) > 0:
             if self.validate_hash(r) == False:
-                print("Hash invalid")
+                #print("Hash invalid")
                 self.close_peer_connection(peer)
                 return False
             else:
-                print("Hash valid")
+                #print("Hash valid")
                 return True
         else:
             self.close_peer_connection(peer)
@@ -141,7 +147,7 @@ class Connection(object):
         s = peer.connection()
         r0 = s.recv(1)
         expected_length = int.from_bytes(r0, byteorder = 'big') + 49
-        print("Handshake received with length %d" % expected_length)
+        #print("Handshake received with length %d" % expected_length)
         bytes_received = len(r0)
         received_from_tracker = r0
 
@@ -149,7 +155,7 @@ class Connection(object):
             return received_from_tracker
 
         while bytes_received < expected_length:
-            print("Reading bytes - received %d out of %d bytes so far" % (bytes_received, expected_length))
+            #print("Reading bytes - received %d out of %d bytes so far" % (bytes_received, expected_length))
             bytes_read = s.recv(expected_length - bytes_received)
 
             if len(bytes_read) == 0:
@@ -158,11 +164,11 @@ class Connection(object):
             bytes_received += len(bytes_read)
             received_from_tracker += bytes_read
         if s:
-            s.settimeout(None)
+            s.settimeout(5)
         return received_from_tracker
 
     def validate_hash(self, response):
-        print("Validating hash for message")
+        #print("Validating hash for message")
         prefix = response[0]
         return response[prefix + 1 + 8:-20] == self.info_hash
 
@@ -176,12 +182,12 @@ class Connection(object):
             return True
 
     def wait_for_response(self, peer):
-        print("Message sent - waiting for response")
+        #print("Message sent - waiting for response")
         s = peer.connection()
 
         msg_len = 1
         while msg_len != 0 and self.file_manager.complete == False:
-            print ("Reading bytes ...")
+            #print ("Reading bytes ...")
             try:
                 msg_len = int.from_bytes(s.recv(4), byteorder='big')
                 msg_len = max(msg_len, 1)
@@ -191,7 +197,7 @@ class Connection(object):
 
             msg_id = s.recv(1)
 
-            print("Message id is %d, length is %d" % (int.from_bytes(msg_id, byteorder='big'), msg_len))
+            #print("Message id is %d, length is %d" % (int.from_bytes(msg_id, byteorder='big'), msg_len))
 
             bytes_read = s.recv(msg_len - 1)
             received_from_peer = b''
@@ -199,14 +205,17 @@ class Connection(object):
             bytes_received = 1
 
             while len(bytes_read) != 0 and bytes_received < msg_len - 1:
-                bytes_read = s.recv(msg_len - 1 - len(received_from_peer))
+                try:
+                    bytes_read = s.recv(msg_len - 1 - len(received_from_peer))
+                except socket.timeout:
+                    return False
                 bytes_received += len(bytes_read)
                 received_from_peer += bytes_read
 
-            print("Just read %d bytes" % len(bytes_read))
+            #print("Just read %d bytes" % len(bytes_read))
 
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
-            print("Received message with id:", int.from_bytes(msg_id, byteorder='big'))
+            #print("Received message with id:", int.from_bytes(msg_id, byteorder='big'))
             handler(peer, received_from_peer)
 
         if msg_len == 1:
@@ -221,7 +230,7 @@ class Connection(object):
             next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
         finally:
             self.file_lock.release()
-        print("Next index, next begin:", next_index, next_begin)
+        #print("Next index, next begin:", next_index, next_begin)
         if next_index != None:
             msg = self.compose_request_message(next_index, next_begin, block_length)
             self.send_message(peer, msg)
@@ -229,11 +238,11 @@ class Connection(object):
             self.close_peer_connection(peer)
 
     def handle_choke(self, peer, message):
-        print("Choked")
+        #print("Choked")
         self.close_peer_connection(peer)
 
     def handle_unchoke(self, peer, message):
-        print("Unchoked")
+        #print("Unchoked")
         self.request_next_block(peer)
 
     def handle_interested(self, peer, message):
@@ -243,9 +252,9 @@ class Connection(object):
         pass
 
     def handle_have(self, peer, message):
-        print("Message type is 'have'")
+        #print("Message type is 'have'")
         piece = int.from_bytes(message, byteorder='big')
-        print(piece)
+        #print(piece)
         peer.add_piece(piece)
 
         if peer.interested == False:
@@ -257,7 +266,7 @@ class Connection(object):
         return True
 
     def handle_bitfield(self, peer, message):
-        print("Message type is 'bitfield'")
+        #print("Message type is 'bitfield'")
         pieces = bin(int.from_bytes(message, byteorder='big'))[2:]
         available_indices = [i for i in range(len(pieces)) if pieces[i] == '1']
         peer.add_from_bitfield(available_indices)
@@ -277,7 +286,7 @@ class Connection(object):
         index = int.from_bytes(message[:4], byteorder='big')
         begin = int.from_bytes(message[4:8], byteorder='big')
         block = message[8:]
-        print("Received block of length: %d" % len(block))
+        #print("Received block of length: %d" % len(block))
         self.file_manager.update_status(index, begin, block)
         self.request_next_block(peer)
 
@@ -292,7 +301,7 @@ class Connection(object):
         return interested
 
     def compose_request_message(self, index, begin, length):
-        print("Requesting block of length", length)
+        #print("Requesting block of length", length)
         req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
             (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
             (length).to_bytes(4, byteorder='big')
@@ -300,10 +309,10 @@ class Connection(object):
 
     def close_peer_connection(self, peer):
         self.peerlist_lock.acquire()
-        try:
+        if peer in self.current_connections:
             self.current_connections.remove(peer)
-        finally:
-            self.peerlist_lock.release()
-        del self.threads[peer]
-        self.available_peers.append(peer)
+            del self.threads[peer]
+        self.peerlist_lock.release()
+        if peer not in self.available_peers:
+            self.available_peers.append(peer)
         peer.shutdown()

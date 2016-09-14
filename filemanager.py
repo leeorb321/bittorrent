@@ -1,6 +1,7 @@
 import math
 import random
 import hashlib
+from queue import Queue
 
 class FileManager(object):
     def __init__(self, torrent, to_write):
@@ -12,6 +13,8 @@ class FileManager(object):
         self.last_sizes()
         self.complete = False
         self.to_write = to_write
+        self.download_queue = self.setup_download_queue()
+        self.outstanding_requests = set()
 
     def get_block_size(self, piece, block):
         blocks_per_piece = len(self.completion_status[piece])
@@ -23,13 +26,42 @@ class FileManager(object):
         else:
             return self.final_block_size
 
-    def get_next_block(self, peer):
-        needed_pieces = [ piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
-        print("The intersection of needed and have is %r pieces long" % len(set(needed_pieces) & set(peer.pieces)))
-        print(len(set(needed_pieces) & set(peer.pieces)) * "*")
+    def setup_download_queue(self):
+        q = Queue()
+        for piece in self.completion_status:
+            for index, block in enumerate(self.completion_status[piece]):
+                to_download = (piece, index)
+                q.put(to_download)
+        return q
 
-        if len(needed_pieces) == 0:
+    def get_next_block(self, peer):
+        needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
+        if self.download_queue.qsize() == 0 and len(needed_pieces) == 0:
+            if self.complete == False:
+                self.download_complete()
+            return None, None, None
+
+        next_block = self.download_queue.get()
+        max_tries = self.download_queue.qsize()
+        counter = 0
+        while next_block[0] not in set(peer.pieces):
+            self.download_queue.put(next_block)
+            next_block = self.download_queue.get()
+            counter += 1
+            if counter == max_tries: return None, None, None
+
+        self.outstanding_requests.add(next_block)
+        piece, block_index = next_block
+        block_size = self.get_block_size(piece, block_index)
+        return piece, block_index*self.block_size, block_size
+
+        """needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
+
+        if len(needed_pieces) == 0 and self.complete == False:
             self.download_complete()
+            return None, None, None
+        elif len(needed_pieces) == 0:
+            return None, None, None
 
         for piece in (set(needed_pieces) & set(peer.pieces)):
             blocks = self.completion_status[piece]
@@ -41,22 +73,35 @@ class FileManager(object):
                 pass
 
         if len(set(needed_pieces) & set(peer.pieces)) == 0:
-            return None, None, None
+            return None, None, None"""
 
     def download_complete(self):
         self.to_write.put((-1, 0))
         print("Download of %r complete." % self.torrent.name)
         self.complete = True
 
+    def enqueue_outstanding_requests(self):
+        for request in self.outstanding_requests:
+            self.download_queue.put(request)
+
     def update_status(self, piece, begin, data):
         block_index = begin // self.block_size
+        if (piece, block_index) in self.outstanding_requests:
+            self.outstanding_requests.remove((piece, block_index))
+        if all(self.completion_status[piece]):
+            return
         self.completion_status[piece][block_index] = data
         if all(self.completion_status[piece]):
             print("Piece complete, checking hash")
             if self.validate_piece(piece) == False:
-                self.completion_status[piece] = [0] * len(self.completion_status[piece])
+                self.handle_invalid_hash(piece)
             else:
                 self.add_completed_piece(piece)
+
+    def handle_invalid_hash(self, piece):
+        self.completion_status[piece] = [0] * len(self.completion_status[piece])
+        for index, _ in enumerate(self.completion_status[piece]):
+            self.download_queue.put((piece, index))
 
     def add_completed_piece(self, piece):
         data = b''.join(self.completion_status[piece])
@@ -91,3 +136,9 @@ class FileManager(object):
         complete = sum([len(self.completion_status[block]) for block in self.completion_status if 0 not in self.completion_status[block]])
         percent = str((complete / total) * 100) + '%'
         return percent
+
+    def get_piece_numbers(self):
+        needed_pieces = [ piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
+        needed = len(set(needed_pieces))
+        total = self.num_pieces
+        return needed, total
