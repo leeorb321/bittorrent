@@ -2,8 +2,12 @@ import math
 import random
 import hashlib
 from queue import Queue
+import time
 
 class FileManager(object):
+
+    RESEND_TIMEOUT = 1
+
     def __init__(self, torrent, to_write):
         self.torrent = torrent
         self.piece_hashes = torrent.hashes
@@ -14,7 +18,7 @@ class FileManager(object):
         self.complete = False
         self.to_write = to_write
         self.download_queue = self.setup_download_queue()
-        self.outstanding_requests = set()
+        self.outstanding_requests = {}
 
     def get_block_size(self, piece, block):
         blocks_per_piece = len(self.completion_status[piece])
@@ -50,30 +54,10 @@ class FileManager(object):
             counter += 1
             if counter == max_tries: return None, None, None
 
-        self.outstanding_requests.add(next_block)
+        self.outstanding_requests[next_block] = time.time()
         piece, block_index = next_block
         block_size = self.get_block_size(piece, block_index)
         return piece, block_index*self.block_size, block_size
-
-        """needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
-
-        if len(needed_pieces) == 0 and self.complete == False:
-            self.download_complete()
-            return None, None, None
-        elif len(needed_pieces) == 0:
-            return None, None, None
-
-        for piece in (set(needed_pieces) & set(peer.pieces)):
-            blocks = self.completion_status[piece]
-            try:
-                index = blocks.index(0)
-                block_size = self.get_block_size(piece, index)
-                return piece, index*self.block_size, block_size
-            except:
-                pass
-
-        if len(set(needed_pieces) & set(peer.pieces)) == 0:
-            return None, None, None"""
 
     def download_complete(self):
         self.to_write.put((-1, 0))
@@ -81,13 +65,14 @@ class FileManager(object):
         self.complete = True
 
     def enqueue_outstanding_requests(self):
-        for request in self.outstanding_requests:
-            self.download_queue.put(request)
+        for request, t0 in self.outstanding_requests.items():
+            if time.time() - t0 > self.RESEND_TIMEOUT:
+                self.download_queue.put(request)
 
     def update_status(self, piece, begin, data):
         block_index = begin // self.block_size
         if (piece, block_index) in self.outstanding_requests:
-            self.outstanding_requests.remove((piece, block_index))
+            del self.outstanding_requests[(piece, block_index)]
         if all(self.completion_status[piece]):
             return
         self.completion_status[piece][block_index] = data
@@ -98,6 +83,10 @@ class FileManager(object):
             else:
                 self.add_completed_piece(piece)
 
+        needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
+        if self.download_queue.qsize() == 0 and len(needed_pieces) == 0 and self.complete == False:
+            self.download_complete()
+
     def handle_invalid_hash(self, piece):
         self.completion_status[piece] = [0] * len(self.completion_status[piece])
         for index, _ in enumerate(self.completion_status[piece]):
@@ -107,7 +96,6 @@ class FileManager(object):
         data = b''.join(self.completion_status[piece])
         self.to_write.put((piece, data))
         self.completion_status[piece] = [1] * len(self.completion_status[piece])
-        print(self.completion_status[piece])
 
     def validate_piece(self, piece):
         h0 = self.piece_hashes[piece]

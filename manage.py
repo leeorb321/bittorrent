@@ -2,7 +2,7 @@ import socket
 import random
 import time
 from queue import Queue
-from threading import Thread, Lock
+from threading import Thread, Lock, activeCount
 import os
 
 from filemanager import FileManager
@@ -25,7 +25,7 @@ class Connection(object):
                 9: 'handle_port'
             }
 
-    MAX_CONNECTIONS = 25
+    MAX_CONNECTIONS = 30
 
     def __init__(self, tracker_response, torrent):
         self.tc = tracker_response
@@ -39,6 +39,7 @@ class Connection(object):
         self.threads = {}
         self.peerlist_lock = Lock()
         self.file_lock = Lock()
+        self.completion_status_lock = Lock()
         self.file_manager = FileManager(torrent, self.to_write)
         self.file_writer = FileWriter(torrent, self.to_write)
 
@@ -81,6 +82,11 @@ class Connection(object):
             print("There are %r current connections and %r available peers." % (len(self.current_connections), len(self.available_peers)))
             print("Download is %r complete." % self.file_manager.download_status())
             print("Pieces remaining:")
+            print("Active threads: " + str(activeCount()))
+            if float(self.file_manager.download_status()[:-1]) > 99.0:
+                print(self.file_manager.download_queue.qsize())
+                print(self.file_manager.outstanding_requests)
+                #print(self.file_manager.completion_status)
             needed, total = self.file_manager.get_piece_numbers()
             print("*"*needed)
 
@@ -91,13 +97,14 @@ class Connection(object):
                 self.available_peers = list(peers.values())
                 random.shuffle(self.available_peers)
 
-            self.get_peers()
+            if not self.file_manager.complete:
+                self.get_peers()
             if self.file_manager.complete:
-                return
+                print("The janitor thinks the download is complete.")
+                #return
             time.sleep(1)
 
     def start(self, peer):
-        # print("Starting peer ...")
         self.peerlist_lock.acquire()
         try:
             self.current_connections.add(peer)
@@ -110,7 +117,6 @@ class Connection(object):
     def connect_to_peer(self, peer):
         s = peer.connection()
         if s:
-            #print("Established socket connection for next peer")
             if self.initial_connection(peer):
                 self.wait_for_response(peer)
         else:
@@ -182,23 +188,18 @@ class Connection(object):
             return True
 
     def wait_for_response(self, peer):
-        #print("Message sent - waiting for response")
         s = peer.connection()
 
         msg_len = 1
-        while msg_len != 0 and self.file_manager.complete == False:
-            #print ("Reading bytes ...")
+        while msg_len != 0 and not self.file_manager.complete:
             try:
                 msg_len = int.from_bytes(s.recv(4), byteorder='big')
                 msg_len = max(msg_len, 1)
             except:
                 self.close_peer_connection(peer)
-                return None
+                return
 
             msg_id = s.recv(1)
-
-            #print("Message id is %d, length is %d" % (int.from_bytes(msg_id, byteorder='big'), msg_len))
-
             bytes_read = s.recv(msg_len - 1)
             received_from_peer = b''
             received_from_peer += bytes_read
@@ -208,14 +209,12 @@ class Connection(object):
                 try:
                     bytes_read = s.recv(msg_len - 1 - len(received_from_peer))
                 except socket.timeout:
+                    self.close_peer_connection(peer)
                     return False
                 bytes_received += len(bytes_read)
                 received_from_peer += bytes_read
 
-            #print("Just read %d bytes" % len(bytes_read))
-
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
-            #print("Received message with id:", int.from_bytes(msg_id, byteorder='big'))
             handler(peer, received_from_peer)
 
         if msg_len == 1:
@@ -223,14 +222,13 @@ class Connection(object):
             return False
         else:
             return received_from_peer
+            return True
 
     def request_next_block(self, peer):
         self.file_lock.acquire()
-        try:
-            next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
-        finally:
-            self.file_lock.release()
-        #print("Next index, next begin:", next_index, next_begin)
+        next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
+        self.file_lock.release()
+
         if next_index != None:
             msg = self.compose_request_message(next_index, next_begin, block_length)
             self.send_message(peer, msg)
@@ -286,8 +284,9 @@ class Connection(object):
         index = int.from_bytes(message[:4], byteorder='big')
         begin = int.from_bytes(message[4:8], byteorder='big')
         block = message[8:]
-        #print("Received block of length: %d" % len(block))
+        self.completion_status_lock.acquire()
         self.file_manager.update_status(index, begin, block)
+        self.completion_status_lock.release()
         self.request_next_block(peer)
 
     def handle_cancel(self, peer, message):
@@ -301,7 +300,6 @@ class Connection(object):
         return interested
 
     def compose_request_message(self, index, begin, length):
-        #print("Requesting block of length", length)
         req = (13).to_bytes(4, byteorder='big') + (6).to_bytes(1, byteorder='big') + \
             (index).to_bytes(4, byteorder='big') +(begin).to_bytes(4, byteorder='big') + \
             (length).to_bytes(4, byteorder='big')
@@ -312,7 +310,7 @@ class Connection(object):
         if peer in self.current_connections:
             self.current_connections.remove(peer)
             del self.threads[peer]
-        self.peerlist_lock.release()
         if peer not in self.available_peers:
             self.available_peers.append(peer)
+        self.peerlist_lock.release()
         peer.shutdown()

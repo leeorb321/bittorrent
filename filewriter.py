@@ -26,7 +26,6 @@ class FileWriter(object):
             time.sleep(0.05)
 
     def write_piece(self, index, data):
-        print("Current piece:",index)
         f = open(self.torrent.name, 'rb+')
         f.seek(self.torrent.piece_length * index)
         f.write(data)
@@ -35,4 +34,3 @@ class FileWriter(object):
     def start(self):
         self.t = Thread(target=self.writing)
         self.t.start()
-
