@@ -51,13 +51,18 @@ class FileManager(object):
         while next_block[0] not in set(peer.pieces):
             self.download_queue.put(next_block)
             next_block = self.download_queue.get()
+            while self.completion_status[next_block[0]][next_block[1]]:
+                next_block = self.download_queue.get()
             counter += 1
             if counter == max_tries: return None, None, None
+        if self.download_queue.qsize() + len(self.outstanding_requests) < 20 or self.download_status() > 96:
+            self.download_queue.put(next_block)
 
         self.outstanding_requests[next_block] = time.time()
         piece, block_index = next_block
         block_size = self.get_block_size(piece, block_index)
         return piece, block_index*self.block_size, block_size
+
 
     def download_complete(self):
         self.to_write.put((-1, 0))

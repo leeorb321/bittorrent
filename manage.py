@@ -47,7 +47,6 @@ class Connection(object):
         self.download_file()
 
     def create_handshake(self):
-        #print("Creating handshake message ...")
         pstrlen = bytes([19])
         pstr = b'BitTorrent protocol'
         reserved = b'\0' * 8
@@ -60,7 +59,6 @@ class Connection(object):
         while len(self.current_connections) < self.MAX_CONNECTIONS and not self.file_manager.complete and self.available_peers != []:
             peer = self.available_peers[index%len(self.available_peers)]
             self.available_peers.remove(peer)
-            # print("Checking peer:", peer)
             if peer not in self.current_connections:
                 self.start(peer)
             index += 1
@@ -129,11 +127,10 @@ class Connection(object):
         s = peer.connection()
         if r is not None and len(r) > 0:
             if self.validate_hash(r) == False:
-                #print("Hash invalid")
+                print("Hash invalid")
                 self.close_peer_connection(peer)
                 return False
             else:
-                #print("Hash valid")
                 return True
         else:
             self.close_peer_connection(peer)
@@ -154,7 +151,6 @@ class Connection(object):
         s = peer.connection()
         r0 = s.recv(1)
         expected_length = int.from_bytes(r0, byteorder = 'big') + 49
-        #print("Handshake received with length %d" % expected_length)
         bytes_received = len(r0)
         received_from_tracker = r0
 
@@ -162,7 +158,6 @@ class Connection(object):
             return received_from_tracker
 
         while bytes_received < expected_length:
-            #print("Reading bytes - received %d out of %d bytes so far" % (bytes_received, expected_length))
             bytes_read = s.recv(expected_length - bytes_received)
 
             if len(bytes_read) == 0:
@@ -175,7 +170,6 @@ class Connection(object):
         return received_from_tracker
 
     def validate_hash(self, response):
-        #print("Validating hash for message")
         prefix = response[0]
         return response[prefix + 1 + 8:-20] == self.info_hash
 
@@ -237,11 +231,9 @@ class Connection(object):
             self.close_peer_connection(peer)
 
     def handle_choke(self, peer, message):
-        #print("Choked")
         self.close_peer_connection(peer)
 
     def handle_unchoke(self, peer, message):
-        #print("Unchoked")
         self.request_next_block(peer)
 
     def handle_interested(self, peer, message):
@@ -251,9 +243,7 @@ class Connection(object):
         pass
 
     def handle_have(self, peer, message):
-        #print("Message type is 'have'")
         piece = int.from_bytes(message, byteorder='big')
-        #print(piece)
         peer.add_piece(piece)
 
         if peer.interested == False:
@@ -265,7 +255,6 @@ class Connection(object):
         return True
 
     def handle_bitfield(self, peer, message):
-        #print("Message type is 'bitfield'")
         pieces = bin(int.from_bytes(message, byteorder='big'))[2:]
         available_indices = [i for i in range(len(pieces)) if pieces[i] == '1']
         peer.add_from_bitfield(available_indices)
