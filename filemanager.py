@@ -105,7 +105,6 @@ class FileManager(object):
         if h != h0:
             print("%d: hashes don't match" % piece)
             return False
-        # print("%d: hashes match!"%piece)
         return True
 
     def get_hash(self, piece):
