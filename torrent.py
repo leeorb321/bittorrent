@@ -3,9 +3,9 @@ from bcoding import bencode
 
 class Torrent(object):
     # Class containing information about a torrent given in the torrent file
-    def __init__(self, url, info, name, piece_length, pieces, length, multi=False):
-        self.tracker_url = url
-        print(url)
+    def __init__(self, urls, info, name, piece_length, pieces, length, multi=False):
+        self.tracker_urls = urls
+        print(urls)
         self.name = name
         self.piece_length = piece_length
         self.pieces = pieces

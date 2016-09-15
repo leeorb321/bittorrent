@@ -17,7 +17,7 @@ class TrackerConnect(object):
         self.uploaded = 0
         self.downloaded = 0
         self.left = torrent.length - self.downloaded
-        self.resp = self.send_request(event='started')
+        self.resp = self.get_tracker(event='started')
 
     def generate_payload(self, event):
         return {'info_hash': self.info_hash,
@@ -29,18 +29,32 @@ class TrackerConnect(object):
                     'event': event
                 }
 
-    def send_request(self, event):
+    def get_tracker(self, event):
+        max_tracker_attempts = 3
+        counter = 0
+        response = False
+        while not response and counter < max_tracker_attempts*len(self.torrent.tracker_urls):
+            response = self.try_next_tracker(counter, event)
+            counter += 1
+        if counter == max_tracker_attempts*len(self.torrent.tracker_urls):
+            print("No working trackers found.")
+        return response
+
+    def try_next_tracker(self, counter, event):
+        url = self.torrent.tracker_urls[counter%len(self.torrent.tracker_urls)]
+        return self.send_request(event, url)
+
+    def send_request(self, event, url):
         print("Sending request to tracker ...")
+        if url.startswith('http'):
+            return self._send_http_request(event, url)
+        elif url.startswith('udp'):
+            return self._send_udp_request(event, url)
 
-        if self.torrent.tracker_url.startswith('http'):
-            return self._send_http_request(event)
-        elif self.torrent.tracker_url.startswith('udp'):
-            return self._send_udp_request(event)
-
-    def _send_http_request(self, event):
+    def _send_http_request(self, event, url):
         payload = self.generate_payload(event)
         try:
-            r = requests.get(self.torrent.tracker_url, params=payload)
+            r = requests.get(url, params=payload, timeout=1)
             resp = bdecode(bytes(r.text, 'ISO-8859-1'))
             peers = resp['peers']
             peers_dict = {}
@@ -53,7 +67,6 @@ class TrackerConnect(object):
             resp['peers'] = peers_dict
 
             print("List of %d peers received" % len(resp['peers']))
-            print(resp['peers'])
 
             return resp
 
@@ -61,16 +74,21 @@ class TrackerConnect(object):
             return False
 
 
-    def _send_udp_request(self, event):
+    def _send_udp_request(self, event, url):
         s_tracker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        addr, port = self.parse_udp_url(self.torrent.tracker_url)
+        s_tracker.settimeout(1)
+        addr, port = self.parse_udp_url(url)
 
         msg, txn_id = self.udp_connection_request()
 
-        s_tracker.sendto(msg, (addr, int(port)))
-        response, _ = s_tracker.recvfrom(2048)
-        print("UDP tracker response received ...")
-        print("Length of response:", len(response))
+        try:
+            s_tracker.sendto(msg, (addr, int(port)))
+            response, _ = s_tracker.recvfrom(2048)
+            print("UDP tracker response received ...")
+            print("Length of response:", len(response))
+        except:
+            print("UDP tracker failed:", url)
+            return False
 
         if len(response) >= 16:
             action_resp = int.from_bytes(response[:4], byteorder='big')
@@ -136,7 +154,6 @@ class TrackerConnect(object):
 
     def parse_udp_url(self, url):
         port_ip = re.match(r'^udp://(.+):(\d+)', url).groups()
-        print(port_ip[0], port_ip[1])
         return port_ip[0], port_ip[1]
 
     def udp_connection_request(self):

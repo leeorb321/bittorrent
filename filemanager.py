@@ -77,7 +77,7 @@ class FileManager(object):
             return
         self.completion_status[piece][block_index] = data
         if all(self.completion_status[piece]):
-            print("Piece complete, checking hash")
+            # print("Piece complete, checking hash")
             if self.validate_piece(piece) == False:
                 self.handle_invalid_hash(piece)
             else:
@@ -105,7 +105,7 @@ class FileManager(object):
         if h != h0:
             print("%d: hashes don't match" % piece)
             return False
-        print("%d: hashes match!"%piece)
+        # print("%d: hashes match!"%piece)
         return True
 
     def get_hash(self, piece):
@@ -122,7 +122,7 @@ class FileManager(object):
     def download_status(self):
         total = sum([len(self.completion_status[x]) for x in self.completion_status])
         complete = sum([len(self.completion_status[block]) for block in self.completion_status if 0 not in self.completion_status[block]])
-        percent = str((complete / total) * 100) + '%'
+        percent = (complete / total) * 100
         return percent
 
     def get_piece_numbers(self):

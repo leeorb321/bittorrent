@@ -34,6 +34,7 @@ class Connection(object):
         self.interval = self.tc.resp['interval']
         self.handshake = self.create_handshake()
         self.current_connections = set()
+        self.name = torrent.name
 
         self.to_write = Queue()
         self.threads = {}
@@ -79,14 +80,14 @@ class Connection(object):
     def maintain_peers(self):
         while True:
             os.system('cls' if os.name=='nt' else 'clear')
+            print("Downloading", self.name)
             print("There are %r current connections and %r available peers." % (len(self.current_connections), len(self.available_peers)))
-            print("Download is %r complete." % self.file_manager.download_status())
+            print("Download is %.2f%% complete." % self.file_manager.download_status())
             print("Pieces remaining:")
             print("Active threads: " + str(activeCount()))
-            if float(self.file_manager.download_status()[:-1]) > 99.0:
+            if self.file_manager.download_status() > 99.0:
                 print(self.file_manager.download_queue.qsize())
                 print(self.file_manager.outstanding_requests)
-                #print(self.file_manager.completion_status)
             needed, total = self.file_manager.get_piece_numbers()
             print("*"*needed)
 

@@ -10,16 +10,16 @@ class ParseTorrent(object):
         with open(self.path, 'rb') as f:
             torrent_file = bdecode(f)
 
-
+        urls = []
         try:
-            url = torrent_file['announce']
+            urls.append(torrent_file['announce'])
         except:
-            trackers_list = []
+            pass
+        try:
             for tracker in torrent_file['announce-list']:
-                trackers_list.append(tracker[0])
-
-            # Use only first tracker for now
-            url = trackers_list[0]
+                urls.append(tracker[0])
+        except:
+            pass
 
         info = torrent_file['info']
         name = info['name']
@@ -31,4 +31,4 @@ class ParseTorrent(object):
         print("Torrent piece length = %d"%int(piece_length))
         print("Torrent has %d bytes" % length)
 
-        return Torrent(url, info, name, piece_length, pieces, length)
+        return Torrent(urls, info, name, piece_length, pieces, length)
