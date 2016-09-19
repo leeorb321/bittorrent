@@ -3,6 +3,7 @@ import random
 import hashlib
 from queue import Queue
 import time
+import os
 
 class FileManager(object):
 
@@ -13,12 +14,27 @@ class FileManager(object):
         self.piece_hashes = torrent.hashes
         self.num_pieces = len(self.piece_hashes)
         self.block_size = 2**13
-        self.completion_status = {i: [0]*math.ceil(torrent.piece_length/self.block_size) for i in range(self.num_pieces)}
+        self.completion_status = self.get_initial_completion_status()
         self.last_sizes()
         self.complete = False
         self.to_write = to_write
         self.download_queue = self.setup_download_queue()
         self.outstanding_requests = {}
+
+    def get_initial_completion_status(self):
+        file_name = self.torrent.name + "_status.txt"
+        file_path = os.path.join(self.torrent.name, file_name)
+        starting_status = {i: [0]*math.ceil(self.torrent.piece_length/self.block_size) for i in range(self.num_pieces)}
+        if not os.path.exists(file_path):
+            return starting_status
+
+        with open(file_path, 'r') as f:
+            status_bit_vector = f.read().strip()
+        for index, char in enumerate(status_bit_vector):
+            if char == "1":
+                starting_status[index] = [1 for _ in starting_status[index]]
+        return starting_status
+
 
     def get_block_size(self, piece, block):
         blocks_per_piece = len(self.completion_status[piece])
@@ -48,6 +64,7 @@ class FileManager(object):
         next_block = self.download_queue.get()
         max_tries = self.download_queue.qsize()
         counter = 0
+
         while next_block[0] not in set(peer.pieces):
             self.download_queue.put(next_block)
             next_block = self.download_queue.get()
@@ -55,8 +72,10 @@ class FileManager(object):
                 next_block = self.download_queue.get()
             counter += 1
             if counter == max_tries: return None, None, None
+
         if self.download_queue.qsize() + len(self.outstanding_requests) < 20 or self.download_status() > 96:
-            self.download_queue.put(next_block)
+            if self.completion_status[next_block[0]][next_block[1]] == 0:
+                self.download_queue.put(next_block)
 
         self.outstanding_requests[next_block] = time.time()
         piece, block_index = next_block
@@ -82,7 +101,6 @@ class FileManager(object):
             return
         self.completion_status[piece][block_index] = data
         if all(self.completion_status[piece]):
-            # print("Piece complete, checking hash")
             if self.validate_piece(piece) == False:
                 self.handle_invalid_hash(piece)
             else:

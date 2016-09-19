@@ -42,7 +42,7 @@ class Connection(object):
         self.file_lock = Lock()
         self.completion_status_lock = Lock()
         self.file_manager = FileManager(torrent, self.to_write)
-        self.file_writer = FileWriter(torrent, self.to_write)
+        self.file_writer = FileWriter(torrent, self.to_write, self.file_manager)
 
         self.download_file()
 
@@ -77,17 +77,14 @@ class Connection(object):
 
     def maintain_peers(self):
         while True:
+            percent_complete = self.file_manager.download_status()
             os.system('cls' if os.name=='nt' else 'clear')
             print("Downloading", self.name)
             print("There are %r current connections and %r available peers." % (len(self.current_connections), len(self.available_peers)))
-            print("Download is %.2f%% complete." % self.file_manager.download_status())
-            print("Pieces remaining:")
-            print("Active threads: " + str(activeCount()))
-            if self.file_manager.download_status() > 99.0:
-                print(self.file_manager.download_queue.qsize())
-                print(self.file_manager.outstanding_requests)
             needed, total = self.file_manager.get_piece_numbers()
-            print("*"*needed)
+            print("Pieces remaining: " + str(needed))
+            print("Active threads: " + str(activeCount()))
+            print(self.status_bar(percent_complete))
 
             self.file_manager.enqueue_outstanding_requests()
 
@@ -99,8 +96,8 @@ class Connection(object):
             if not self.file_manager.complete:
                 self.get_peers()
             if self.file_manager.complete:
-                print("The janitor thinks the download is complete.")
-                #return
+                print("Complete - writing file to disk.")
+                return
             time.sleep(1)
 
     def start(self, peer):
@@ -143,13 +140,15 @@ class Connection(object):
             sent = s.send(message)
             return self.wait_for_handshake(peer)
         except (ConnectionRefusedError, socket.timeout, BrokenPipeError, ConnectionResetError) as e:
-            # print("Error connecting: %r" % e)
             self.close_peer_connection(peer)
             return None
 
     def wait_for_handshake(self, peer):
         s = peer.connection()
-        r0 = s.recv(1)
+        try:
+            r0 = s.recv(1)
+        except:
+            return None
         expected_length = int.from_bytes(r0, byteorder = 'big') + 49
         bytes_received = len(r0)
         received_from_tracker = r0
@@ -304,3 +303,10 @@ class Connection(object):
             self.available_peers.append(peer)
         self.peerlist_lock.release()
         peer.shutdown()
+
+    def status_bar(self, percent_complete):
+        int_percent_complete = int(percent_complete)
+        front = "#"*int_percent_complete
+        back = " "*(100-int_percent_complete)
+        bar = "[" + front + back + "] " + "%.2f"%(percent_complete) + "%"
+        return bar

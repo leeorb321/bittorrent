@@ -4,20 +4,55 @@ from threading import Thread
 
 class FileWriter(object):
 
-    def __init__(self, torrent, to_write):
+    def __init__(self, torrent, to_write, file_manager):
         self.torrent = torrent
         self.file_structure = torrent.file_structure
         self.to_write = to_write
+        self.written = self.get_written()
+        self.file_manager = file_manager
         self.init_files()
         self.start()
 
     def init_files(self):
-        print("File Structure:", self.file_structure.files)
-        if not os.path.exists(self.torrent.name):
-            os.makedirs(self.torrent.name)
-        for file in self.file_structure.files:
-            print(file)
-            self.create_file(file)
+        if self.written == []:
+            print("File Structure:", self.file_structure.files)
+            if not os.path.exists(self.torrent.name):
+                os.makedirs(self.torrent.name)
+            for file in self.file_structure.files:
+                print(file)
+                self.create_file(file)
+            self.create_status_file()
+
+    def get_written(self):
+        file_name = self.torrent.name + "_status.txt"
+        file_path = os.path.join(self.torrent.name, file_name)
+        if not os.path.exists(file_path):
+            return []
+
+        with open(file_path, 'r') as f:
+            status_bit_vector = f.read().strip()
+        written = [i for i, char in enumerate(status_bit_vector) if char == "1"]
+        print(written)
+        return written
+
+    def create_status_file(self):
+        file_name = self.torrent.name + "_status.txt"
+        file_path = os.path.join(self.torrent.name, file_name)
+        if not os.path.exists(file_path):
+            print("creating new status file")
+            f = open(file_path, "w")
+            f.seek(len(self.torrent.hashes))
+            f.write('\0')
+            f.close()
+
+    def update_status_file(self):
+        num_pieces = len(self.torrent.hashes)
+        completed_bit_vector = "".join(["1" if i in self.written else "0" for i in range(num_pieces)])
+        file_name = self.torrent.name + "_status.txt"
+        file_path = os.path.join(self.torrent.name, file_name)
+        f = open(file_path, "w")
+        f.write(completed_bit_vector)
+        f.close()
 
     def create_file(self, file):
         dirs = file.path[:-1]
@@ -38,9 +73,9 @@ class FileWriter(object):
             while not self.to_write.empty():
                 index, data = self.to_write.get()
                 if index == -1:
-                    print("returned")
                     return
                 self.write_piece(index, data)
+            self.update_status_file()
             time.sleep(0.05)
 
     def get_file_by_index(self, byte_index):
@@ -71,6 +106,8 @@ class FileWriter(object):
             f.seek(offset)
             f.write(data_to_write)
             f.close()
+
+        self.written.append(index)
 
     def start(self):
         self.t = Thread(target=self.writing)
