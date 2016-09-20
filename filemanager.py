@@ -59,9 +59,11 @@ class FileManager(object):
 
     def get_next_block(self, peer):
         needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
-        if self.download_queue.qsize() == 0 and len(needed_pieces) == 0:
+        if self.download_queue.empty() and len(needed_pieces) == 0:
             if self.complete == False:
                 self.download_complete()
+            return None, None, None
+        elif self.download_queue.empty():
             return None, None, None
 
         next_block = self.download_queue.get()
@@ -71,8 +73,11 @@ class FileManager(object):
         while next_block[0] not in set(peer.pieces):
             self.download_queue.put(next_block)
             next_block = self.download_queue.get()
-            while self.completion_status[next_block[0]][next_block[1]]:
-                next_block = self.download_queue.get()
+            while self.completion_status[next_block[0]][next_block[1]] == 1:
+                if not self.download_queue.empty():
+                    next_block = self.download_queue.get()
+                else:
+                    return None, None, None
             counter += 1
             if counter == max_tries:
                 return None, None, None
