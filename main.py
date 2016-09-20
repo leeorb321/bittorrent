@@ -7,6 +7,6 @@ from filemanager import FileManager
 
 stacktracer.trace_start("trace.html",interval=5,auto=True)
 
-torrent = ParseTorrent('multifile.torrent').parse()
+torrent = ParseTorrent('radiohead.torrent').parse()
 tc = TrackerConnect(torrent)
 conn = Connection(tc, torrent)

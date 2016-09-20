@@ -58,6 +58,9 @@ class FileManager(object):
         return q
 
     def get_next_block(self, peer):
+        if self.complete:
+            return None, None, None
+
         needed_pieces = [piece for piece in self.completion_status.keys() if 0 in self.completion_status[piece] ]
         if self.download_queue.empty() and len(needed_pieces) == 0:
             if self.complete == False:
@@ -66,7 +69,11 @@ class FileManager(object):
         elif self.download_queue.empty():
             return None, None, None
 
-        next_block = self.download_queue.get()
+        if not self.download_queue.empty():
+            next_block = self.download_queue.get()
+        else:
+            return None, None, None
+
         max_tries = self.download_queue.qsize()
         counter = 0
 
@@ -94,6 +101,7 @@ class FileManager(object):
     def download_complete(self):
         self.to_write.put((-1, 0))
         print("Download of %r complete." % self.torrent.name)
+        self.outstanding_requests = {}
         self.complete = True
 
     def enqueue_outstanding_requests(self):
