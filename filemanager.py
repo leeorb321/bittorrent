@@ -4,6 +4,7 @@ import hashlib
 from queue import Queue
 import time
 import os
+from threading import Lock
 
 class FileManager(object):
 
@@ -13,13 +14,15 @@ class FileManager(object):
         self.torrent = torrent
         self.piece_hashes = torrent.hashes
         self.num_pieces = len(self.piece_hashes)
-        self.block_size = 2**13
+        self.block_size = 2**14
+
         self.completion_status = self.get_initial_completion_status()
         self.last_sizes()
         self.complete = False
         self.to_write = to_write
         self.download_queue = self.setup_download_queue()
         self.outstanding_requests = {}
+
 
     def get_initial_completion_status(self):
         file_name = self.torrent.name + "_status.txt"
@@ -71,7 +74,8 @@ class FileManager(object):
             while self.completion_status[next_block[0]][next_block[1]]:
                 next_block = self.download_queue.get()
             counter += 1
-            if counter == max_tries: return None, None, None
+            if counter == max_tries:
+                return None, None, None
 
         if self.download_queue.qsize() + len(self.outstanding_requests) < 20 or self.download_status() > 96:
             if self.completion_status[next_block[0]][next_block[1]] == 0:
@@ -82,14 +86,14 @@ class FileManager(object):
         block_size = self.get_block_size(piece, block_index)
         return piece, block_index*self.block_size, block_size
 
-
     def download_complete(self):
         self.to_write.put((-1, 0))
         print("Download of %r complete." % self.torrent.name)
         self.complete = True
 
     def enqueue_outstanding_requests(self):
-        for request, t0 in self.outstanding_requests.items():
+        outstanding_requests_copy = self.outstanding_requests.copy()
+        for request, t0 in outstanding_requests_copy.items():
             if time.time() - t0 > self.RESEND_TIMEOUT:
                 self.download_queue.put(request)
 

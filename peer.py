@@ -8,6 +8,7 @@ class Peer(object):
         self.pieces = set()
         self.interested = False
         self.s = None
+        self.current_request_count = 0
 
     def __repr__(self):
         return "IP: %r, Port: %r" % (self.ip, self.port)

@@ -26,6 +26,7 @@ class Connection(object):
             }
 
     MAX_CONNECTIONS = 30
+    MAX_REQUESTS_PER_PEER = 5
 
     def __init__(self, tracker_response, torrent):
         self.tc = tracker_response
@@ -151,22 +152,22 @@ class Connection(object):
             return None
         expected_length = int.from_bytes(r0, byteorder = 'big') + 49
         bytes_received = len(r0)
-        received_from_tracker = r0
+        received_from_peer = r0
 
         if bytes_received == 0:
-            return received_from_tracker
+            return received_from_peer
 
         while bytes_received < expected_length:
             bytes_read = s.recv(expected_length - bytes_received)
 
             if len(bytes_read) == 0:
-                return received_from_tracker
+                return received_from_peer
 
             bytes_received += len(bytes_read)
-            received_from_tracker += bytes_read
+            received_from_peer += bytes_read
         if s:
             s.settimeout(5)
-        return received_from_tracker
+        return received_from_peer
 
     def validate_hash(self, response):
         prefix = response[0]
@@ -174,7 +175,12 @@ class Connection(object):
 
     def send_message(self, peer, message):
         s = peer.connection()
-        sent = s.send(message)
+        try:
+            sent = s.send(message)
+        except:
+            self.close_peer_connection(peer)
+            return False
+
         if sent < 0:
             self.close_peer_connection(peer)
             return False
@@ -194,7 +200,15 @@ class Connection(object):
                 return
 
             msg_id = s.recv(1)
-            bytes_read = s.recv(msg_len - 1)
+            try:
+                bytes_read = s.recv(msg_len - 1)
+            except:
+                print("Message len:", msg_len)
+                msg_len = int.from_bytes(s.recv(4), byteorder='big')
+                msg_len = max(msg_len, 1)
+                print("Message len:", msg_len)
+                print(peer)
+
             received_from_peer = b''
             received_from_peer += bytes_read
             bytes_received = 1
@@ -202,11 +216,15 @@ class Connection(object):
             while len(bytes_read) != 0 and bytes_received < msg_len - 1:
                 try:
                     bytes_read = s.recv(msg_len - 1 - len(received_from_peer))
-                except socket.timeout:
+                except (socket.timeout, ConnectionResetError):
                     self.close_peer_connection(peer)
                     return False
                 bytes_received += len(bytes_read)
                 received_from_peer += bytes_read
+
+            if int.from_bytes(msg_id, byteorder='big') not in self.MESSAGE_HANDLERS:
+                self.close_peer_connection(peer)
+                return False
 
             handler = getattr(self, self.MESSAGE_HANDLERS[int.from_bytes(msg_id, byteorder='big')])
             handler(peer, received_from_peer)
@@ -218,6 +236,10 @@ class Connection(object):
             return received_from_peer
             return True
 
+    def send_request(self, peer):
+        while peer.current_request_count < self.MAX_REQUESTS_PER_PEER:
+            self.request_next_block(peer)
+
     def request_next_block(self, peer):
         self.file_lock.acquire()
         next_index, next_begin, block_length = self.file_manager.get_next_block(peer)
@@ -226,6 +248,7 @@ class Connection(object):
         if next_index != None:
             msg = self.compose_request_message(next_index, next_begin, block_length)
             self.send_message(peer, msg)
+            peer.current_request_count += 1
         else:
             self.close_peer_connection(peer)
 
@@ -233,7 +256,7 @@ class Connection(object):
         self.close_peer_connection(peer)
 
     def handle_unchoke(self, peer, message):
-        self.request_next_block(peer)
+        self.send_request(peer)
 
     def handle_interested(self, peer, message):
         pass
@@ -275,8 +298,9 @@ class Connection(object):
         block = message[8:]
         self.completion_status_lock.acquire()
         self.file_manager.update_status(index, begin, block)
+        peer.current_request_count -= 1
         self.completion_status_lock.release()
-        self.request_next_block(peer)
+        self.send_request(peer)
 
     def handle_cancel(self, peer, message):
         pass

@@ -49,8 +49,8 @@ class FileWriter(object):
         num_pieces = len(self.torrent.hashes)
         completed_bit_vector = "".join(["1" if i in self.written else "0" for i in range(num_pieces)])
         file_name = self.torrent.name + "_status.txt"
-        file_path = os.path.join(self.torrent.name, file_name)
-        f = open(file_path, "w")
+        self.status_file_path = os.path.join(self.torrent.name, file_name)
+        f = open(self.status_file_path, "w")
         f.write(completed_bit_vector)
         f.close()
 
@@ -73,6 +73,9 @@ class FileWriter(object):
             while not self.to_write.empty():
                 index, data = self.to_write.get()
                 if index == -1:
+                    file_name = self.torrent.name + "_status.txt"
+                    file_path = os.path.join(self.torrent.name, file_name)
+                    os.remove(file_path)
                     return
                 self.write_piece(index, data)
             self.update_status_file()
