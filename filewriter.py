@@ -47,11 +47,11 @@ class FileWriter(object):
 
     def update_status_file(self):
         num_pieces = len(self.torrent.hashes)
-        completed_bit_vector = "".join(["1" if i in self.written else "0" for i in range(num_pieces)])
+        self.completed_bit_vector = "".join(["1" if i in self.written else "0" for i in range(num_pieces)])
         file_name = self.torrent.name + "_status.txt"
         self.status_file_path = os.path.join(self.torrent.name, file_name)
         f = open(self.status_file_path, "w")
-        f.write(completed_bit_vector)
+        f.write(self.completed_bit_vector)
         f.close()
 
     def create_file(self, file):
