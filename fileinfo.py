@@ -14,6 +14,6 @@ class File(object):
 class FileStructure(object):
 
     def __init__(self, root_dir, files):
-        self.root_dir = root_dir
+        self.root_dir = os.path.join(os.getcwd(), 'Downloads', root_dir)
         self.files = files
 

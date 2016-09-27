@@ -6,6 +6,7 @@ class FileWriter(object):
 
     def __init__(self, torrent, to_write, file_manager):
         self.torrent = torrent
+        self.cwd = os.getcwd()
         self.file_structure = torrent.file_structure
         self.to_write = to_write
         self.written = self.get_written()
@@ -16,8 +17,8 @@ class FileWriter(object):
     def init_files(self):
         if self.written == []:
             print("File Structure:", self.file_structure.files)
-            if not os.path.exists(self.torrent.name):
-                os.makedirs(self.torrent.name)
+            if not os.path.exists(os.path.join(self.cwd, 'Downloads', self.torrent.name)):
+                os.makedirs(os.path.join('./Downloads', self.torrent.name))
             for file in self.file_structure.files:
                 print(file)
                 self.create_file(file)
@@ -25,7 +26,7 @@ class FileWriter(object):
 
     def get_written(self):
         file_name = self.torrent.name + "_status.txt"
-        file_path = os.path.join(self.torrent.name, file_name)
+        file_path = os.path.join(self.cwd, 'Downloads', self.torrent.name, file_name)
         if not os.path.exists(file_path):
             return []
 
@@ -37,7 +38,7 @@ class FileWriter(object):
 
     def create_status_file(self):
         file_name = self.torrent.name + "_status.txt"
-        file_path = os.path.join(self.torrent.name, file_name)
+        file_path = os.path.join(self.cwd, 'Downloads', self.torrent.name, file_name)
         if not os.path.exists(file_path):
             print("creating new status file")
             f = open(file_path, "w")
@@ -49,7 +50,7 @@ class FileWriter(object):
         num_pieces = len(self.torrent.hashes)
         self.completed_bit_vector = "".join(["1" if i in self.written else "0" for i in range(num_pieces)])
         file_name = self.torrent.name + "_status.txt"
-        self.status_file_path = os.path.join(self.torrent.name, file_name)
+        self.status_file_path = os.path.join(self.cwd, 'Downloads', self.torrent.name, file_name)
         f = open(self.status_file_path, "w")
         f.write(self.completed_bit_vector)
         f.close()
@@ -58,12 +59,12 @@ class FileWriter(object):
         dirs = file.path[:-1]
         current_path = self.file_structure.root_dir
         for folder in dirs:
-            new_path = os.path.join(current_path, folder)
+            new_path = os.path.join(self.cwd, 'Downloads', current_path, folder)
             if not os.path.exists(new_path):
                 os.makedirs(new_path)
             current_path = new_path
 
-        f = open(os.path.join(current_path, file.name), 'wb')
+        f = open(os.path.join(self.cwd, 'Downloads', current_path, file.name), 'wb')
         f.seek(file.length-1)
         f.write(b'\0')
         f.close()
@@ -74,7 +75,7 @@ class FileWriter(object):
                 index, data = self.to_write.get()
                 if index == -1:
                     file_name = self.torrent.name + "_status.txt"
-                    file_path = os.path.join(self.torrent.name, file_name)
+                    file_path = os.path.join(self.cwd, 'Downloads', self.torrent.name, file_name)
                     os.remove(file_path)
                     return
                 self.write_piece(index, data)

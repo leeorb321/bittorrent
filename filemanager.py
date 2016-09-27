@@ -26,7 +26,7 @@ class FileManager(object):
 
     def get_initial_completion_status(self):
         file_name = self.torrent.name + "_status.txt"
-        file_path = os.path.join(self.torrent.name, file_name)
+        file_path = os.path.join(os.getcwd(), 'Downloads', self.torrent.name, file_name)
         starting_status = {i: [0]*math.ceil(self.torrent.piece_length/self.block_size) for i in range(self.num_pieces)}
         if not os.path.exists(file_path):
             return starting_status
