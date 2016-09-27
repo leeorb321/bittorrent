@@ -34,31 +34,39 @@ class TrackerConnect(object):
     def get_tracker(self, event):
         max_tracker_attempts = 3
         counter = 0
-        main_counter = 0
-        response = {}
-        for tracker_url in self.torrent.tracker_urls:
-            counter = 0
-            tracker_response = False
-            while not tracker_response and counter < max_tracker_attempts:
-                tracker_response = self.try_next_tracker(counter, event)
-                counter += 1
-                main_counter += 1
-            if 'peers' not in response:
-                response['peers'] = {}
+        response = False
+        while not response and counter < max_tracker_attempts * len(self.torrent.tracker_urls):
+            response = self.try_next_tracker(counter, event)
+            counter += 1
+        if counter == max_tracker_attempts * len(self.torrent.tracker_urls):
+            print('No working trackers found.')
 
-            if tracker_response:
-                if 'interval' not in response:
-                    response['interval'] = tracker_response['interval']
-                else:
-                    response['interval'] = max(response['interval'], tracker_response['interval'])
 
-                for key, peer in tracker_response['peers'].items():
-                    if peer.ip not in response['peers']:
-                        response['peers'][peer.ip] = peer
-                tracker_response = False
+        # main_counter = 0
+        # response = {}
+        # for tracker_url in self.torrent.tracker_urls:
+        #     counter = 0
+        #     tracker_response = False
+        #     while not tracker_response and counter < max_tracker_attempts:
+        #         tracker_response = self.try_next_tracker(counter, event)
+        #         counter += 1
+        #         main_counter += 1
+        #     if 'peers' not in response:
+        #         response['peers'] = {}
 
-            if main_counter == max_tracker_attempts*len(self.torrent.tracker_urls):
-                print("No working trackers found.")
+        #     if tracker_response:
+        #         if 'interval' not in response:
+        #             response['interval'] = tracker_response['interval']
+        #         else:
+        #             response['interval'] = max(response['interval'], tracker_response['interval'])
+
+        #         for key, peer in tracker_response['peers'].items():
+        #             if peer.ip not in response['peers']:
+        #                 response['peers'][peer.ip] = peer
+        #         tracker_response = False
+
+        #     if main_counter == max_tracker_attempts*len(self.torrent.tracker_urls):
+        #         print("No working trackers found.")
 
         return response
 
@@ -157,6 +165,9 @@ class TrackerConnect(object):
             if resp['txn_id'] != txn_id:
                 print("Transaction IDs do not match.")
                 return False
+
+            print('Leechers:', resp['leechers'])
+            print('Seeders:', resp['seeders'])
 
             peers_dict = {}
             for i in range(20, len(response)-6, 6):
