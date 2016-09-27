@@ -1,13 +1,15 @@
 #BitPy
 BitPy is a lightweight, terminal-based BitTorrent client written in Python. Usage is as follows:
 
-```python main.py <filename>
+```
+$ python main.py <filename>
 ```
 
 ##Example usage:
 Assuming there is a file named `file.torrent` stored in the same directory as BitPy, usage would be like this:
 
-```python main.py file.torrent
+```
+$ python main.py file.torrent
 ```
 
 You should then see a screen like this:
